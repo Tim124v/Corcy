@@ -1,9 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { hash, compare } from 'bcrypt';
 
 interface MembershipWithRoom {
-  room: { id: string; name: string; ownerId: string; expiresAt: Date; owner: { id: string; email: string; name: string | null } };
+  room: { id: string; name: string; ownerId: string; expiresAt: Date; owner: { id: string; email: string; name: string | null; avatarUrl: string | null } };
   joinedAt: Date;
   userId: string;
 }
@@ -11,8 +11,12 @@ interface RoomMessageWithSender {
   id: string;
   text: string;
   senderId: string;
+  systemEventType: string | null;
+  attachmentUrl: string | null;
+  attachmentName: string | null;
+  attachmentType: string | null;
   createdAt: Date;
-  sender: { id: string; email: string; name: string | null };
+  sender: { id: string; email: string; name: string | null; avatarUrl: string | null };
 }
 
 @Injectable()
@@ -29,7 +33,7 @@ export class RoomsService {
       where: { userId },
       include: {
         room: {
-          include: { owner: { select: { id: true, email: true, name: true } } },
+          include: { owner: { select: { id: true, email: true, name: true, avatarUrl: true } } },
         },
       },
       orderBy: { joinedAt: 'desc' },
@@ -55,7 +59,7 @@ export class RoomsService {
         expiresAt,
         members: { create: { userId } },
       },
-      include: { owner: { select: { id: true, email: true, name: true } } },
+      include: { owner: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
     return { id: room.id, name: room.name, owner: room.owner, expiresAt: room.expiresAt };
   }
@@ -64,7 +68,7 @@ export class RoomsService {
     await this.cleanupExpired();
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
-      include: { owner: { select: { id: true, email: true, name: true } } },
+      include: { owner: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
     if (!room) throw new NotFoundException('Комната не найдена');
     const ok = await compare(password, room.passwordHash);
@@ -75,6 +79,45 @@ export class RoomsService {
       update: {},
     });
     return { id: room.id, name: room.name, owner: room.owner, expiresAt: room.expiresAt };
+  }
+
+  async deleteRoom(userId: string, roomId: string) {
+    await this.cleanupExpired();
+    const room = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      select: { id: true, ownerId: true },
+    });
+    if (!room) throw new NotFoundException('Комната не найдена');
+    if (room.ownerId !== userId) throw new ForbiddenException('Удалять комнату может только владелец');
+
+    await this.prisma.room.delete({ where: { id: roomId } });
+    return { ok: true };
+  }
+
+  /** Покинуть комнату (только для участников, не владельцев). */
+  async leaveRoom(userId: string, roomId: string) {
+    await this.cleanupExpired();
+    const room = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      select: { id: true, ownerId: true },
+    });
+    if (!room) throw new NotFoundException('Комната не найдена');
+    if (room.ownerId === userId) throw new ForbiddenException('Владелец не может покинуть комнату; удалите комнату');
+
+    await this.prisma.roomMessage.create({
+      data: {
+        roomId,
+        senderId: userId,
+        text: '',
+        systemEventType: 'user_left',
+      },
+    });
+
+    const deleted = await this.prisma.roomMember.deleteMany({
+      where: { roomId, userId },
+    });
+    if (deleted.count === 0) throw new NotFoundException('Вы не состоите в этой комнате');
+    return { ok: true };
   }
 
   private async ensureMember(userId: string, roomId: string) {
@@ -88,29 +131,51 @@ export class RoomsService {
     const messages = await this.prisma.roomMessage.findMany({
       where: { roomId },
       orderBy: { createdAt: 'asc' },
-      include: { sender: { select: { id: true, email: true, name: true } } },
+      include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
       take: 200,
     });
     return messages.map((m: RoomMessageWithSender) => ({
       id: m.id,
       text: m.text,
       senderId: m.senderId,
+      systemEventType: m.systemEventType ?? undefined,
+      attachmentUrl: m.attachmentUrl ?? undefined,
+      attachmentName: m.attachmentName ?? undefined,
+      attachmentType: m.attachmentType ?? undefined,
       createdAt: m.createdAt,
       sender: m.sender,
     }));
   }
 
-  async sendMessage(userId: string, roomId: string, text: string) {
+  async sendMessage(
+    userId: string,
+    roomId: string,
+    text: string,
+    attachment?: { url?: string; name?: string; type?: string } | null,
+  ) {
     await this.cleanupExpired();
     await this.ensureMember(userId, roomId);
+    const hasAttachment = !!attachment?.url;
+    const textTrim = text?.trim() ?? '';
+    if (!textTrim && !hasAttachment) throw new BadRequestException('Текст или вложение обязательны');
     const message = await this.prisma.roomMessage.create({
-      data: { roomId, senderId: userId, text: text.trim() },
-      include: { sender: { select: { id: true, email: true, name: true } } },
+      data: {
+        roomId,
+        senderId: userId,
+        text: textTrim,
+        attachmentUrl: attachment?.url ?? null,
+        attachmentName: attachment?.name ?? null,
+        attachmentType: attachment?.type ?? null,
+      },
+      include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
     return {
       id: message.id,
       text: message.text,
       senderId: message.senderId,
+      attachmentUrl: message.attachmentUrl ?? undefined,
+      attachmentName: message.attachmentName ?? undefined,
+      attachmentType: message.attachmentType ?? undefined,
       createdAt: message.createdAt,
       sender: message.sender,
     };

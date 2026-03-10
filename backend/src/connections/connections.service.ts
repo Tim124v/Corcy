@@ -11,14 +11,135 @@ export class ConnectionsService {
     const connections = await this.prisma.connection.findMany({
       where: { OR: [{ userIdA: userId }, { userIdB: userId }] },
       include: {
-        userA: { select: { id: true, email: true, name: true } },
-        userB: { select: { id: true, email: true, name: true } },
+        userA: { select: { id: true, email: true, name: true, avatarUrl: true } },
+        userB: { select: { id: true, email: true, name: true, avatarUrl: true } },
       },
     });
     return connections.map((c: (typeof connections)[number]) => ({
       id: c.id,
       user: c.userIdA === userId ? c.userB : c.userA,
     }));
+  }
+
+  async removeConnection(userId: string, connectionId: string) {
+    const connection = await this.prisma.connection.findUnique({
+      where: { id: connectionId },
+      select: { id: true, userIdA: true, userIdB: true },
+    });
+    if (!connection) throw new NotFoundException('Контакт не найден');
+    if (connection.userIdA !== userId && connection.userIdB !== userId) {
+      throw new ForbiddenException('Нет доступа');
+    }
+    const uid1 = connection.userIdA;
+    const uid2 = connection.userIdB;
+    await this.prisma.$transaction([
+      this.prisma.connection.delete({ where: { id: connectionId } }),
+      this.prisma.connectionRequest.deleteMany({
+        where: {
+          OR: [
+            { fromUserId: uid1, toUserId: uid2 },
+            { fromUserId: uid2, toUserId: uid1 },
+          ],
+        },
+      }),
+    ]);
+    return { ok: true };
+  }
+
+  /** Отправить заявку в контакты по ID пользователя. Контакт появится только после принятия заявки. */
+  async requestByUserId(fromUserId: string, toUserId: string) {
+    const toId = String(toUserId || '').trim();
+    if (!toId) throw new NotFoundException('Введите ID пользователя');
+    if (toId === fromUserId) throw new ForbiddenException('Нельзя отправить заявку себе');
+
+    const toUser = await this.prisma.user.findUnique({
+      where: { id: toId },
+      select: { id: true },
+    });
+    if (!toUser) throw new NotFoundException('Пользователь не найден');
+
+    const [uid1, uid2] = fromUserId < toId ? [fromUserId, toId] : [toId, fromUserId];
+    const existingConnection = await this.prisma.connection.findFirst({
+      where: { userIdA: uid1, userIdB: uid2 },
+    });
+    if (existingConnection) throw new ForbiddenException('Уже в контактах');
+
+    const existingRequest = await this.prisma.connectionRequest.findFirst({
+      where: { fromUserId, toUserId: toId },
+      select: { status: true },
+    });
+    if (existingRequest && existingRequest.status === 'pending') {
+      throw new ForbiddenException('Заявка уже отправлена');
+    }
+    const reverseRequest = await this.prisma.connectionRequest.findFirst({
+      where: { fromUserId: toId, toUserId: fromUserId },
+      select: { status: true },
+    });
+    if (reverseRequest?.status === 'pending') throw new ForbiddenException('У этого пользователя уже есть ожидающая заявка к вам. Примите её в разделе «Запросы в контакты».');
+
+    await this.prisma.connectionRequest.upsert({
+      where: { fromUserId_toUserId: { fromUserId, toUserId: toId } },
+      create: { fromUserId, toUserId: toId, status: 'pending' },
+      update: { status: 'pending' },
+    });
+    return { ok: true as const, message: 'sent' as const };
+  }
+
+  async listIncomingRequests(userId: string) {
+    const list = await this.prisma.connectionRequest.findMany({
+      where: { toUserId: userId, status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+      include: { fromUser: { select: { id: true, email: true, name: true, avatarUrl: true } } },
+    });
+    return list.map((r) => ({
+      id: r.id,
+      fromUser: r.fromUser,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  async acceptRequest(userId: string, requestId: string) {
+    const req = await this.prisma.connectionRequest.findUnique({
+      where: { id: requestId },
+      include: { fromUser: { select: { id: true, email: true, name: true, avatarUrl: true } } },
+    });
+    if (!req) throw new NotFoundException('Заявка не найдена');
+    if (req.toUserId !== userId) throw new ForbiddenException('Нет доступа');
+    if (req.status !== 'pending') throw new ForbiddenException('Заявка уже обработана');
+
+    const [uid1, uid2] = req.fromUserId < req.toUserId ? [req.fromUserId, req.toUserId] : [req.toUserId, req.fromUserId];
+    await this.prisma.$transaction([
+      this.prisma.connection.upsert({
+        where: { userIdA_userIdB: { userIdA: uid1, userIdB: uid2 } },
+        create: { userIdA: uid1, userIdB: uid2 },
+        update: {},
+      }),
+      this.prisma.connectionRequest.update({
+        where: { id: requestId },
+        data: { status: 'accepted' },
+      }),
+    ]);
+    const conn = await this.prisma.connection.findFirst({
+      where: { userIdA: uid1, userIdB: uid2 },
+      select: { id: true },
+    });
+    return { ok: true as const, connection: { id: conn!.id, user: req.fromUser } };
+  }
+
+  async rejectRequest(userId: string, requestId: string) {
+    const req = await this.prisma.connectionRequest.findUnique({
+      where: { id: requestId },
+      select: { toUserId: true, status: true },
+    });
+    if (!req) throw new NotFoundException('Заявка не найдена');
+    if (req.toUserId !== userId) throw new ForbiddenException('Нет доступа');
+    if (req.status !== 'pending') throw new ForbiddenException('Заявка уже обработана');
+
+    await this.prisma.connectionRequest.update({
+      where: { id: requestId },
+      data: { status: 'rejected' },
+    });
+    return { ok: true as const };
   }
 
   /** Создать приглашение по ссылке (без email). Кто перейдёт по ссылке — зарегистрируется/войдёт и попадёт в контакты. */
@@ -146,7 +267,7 @@ export class ConnectionsService {
   async acceptInvite(token: string, userId: string) {
     const invite = await this.prisma.invite.findFirst({
       where: { token, usedAt: null },
-      include: { fromUser: { select: { id: true, email: true, name: true } } },
+      include: { fromUser: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
     if (!invite || invite.expiresAt < new Date()) throw new NotFoundException('Ссылка недействительна или истекла');
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -166,6 +287,14 @@ export class ConnectionsService {
         update: {},
       }),
     ]);
-    return { ok: true, contact: { id: invite.fromUser.id, email: invite.fromUser.email, name: invite.fromUser.name } };
+    return {
+      ok: true,
+      contact: {
+        id: invite.fromUser.id,
+        email: invite.fromUser.email,
+        name: invite.fromUser.name,
+        avatarUrl: invite.fromUser.avatarUrl,
+      },
+    };
   }
 }

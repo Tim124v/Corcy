@@ -11,9 +11,15 @@ import { AppModule } from './modules/app.module.js';
 import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync } from 'fs';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
+
   const configService = app.get(ConfigService);
 
   const port = configService.get<number>('PORT', 3001);

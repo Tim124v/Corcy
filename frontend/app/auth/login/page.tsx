@@ -30,7 +30,7 @@ function LoginPageInner() {
     setError('');
     setLoading(true);
     try {
-      const res = await api<{ ok: boolean; user?: { id: string; email: string; name: string | null }; accessToken?: string; error?: string }>(
+      const res = await api<{ ok: boolean; user?: { id: string; email: string; name: string | null; avatarUrl?: string | null }; accessToken?: string; error?: string }>(
         '/auth/login',
         { method: 'POST', body: JSON.stringify({ email: email.trim(), password }) },
       );

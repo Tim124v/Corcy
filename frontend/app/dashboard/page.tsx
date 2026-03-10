@@ -1,15 +1,20 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../store/auth';
+import { useLanguage } from '../../components/language-provider';
+import { useTheme } from '../../components/theme-provider';
+import { useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
+import { useNotificationsStore } from '../../store/notifications';
+import { useChatActivityStore } from '../../store/chat-activity';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-type Connection = { id: string; user: { id: string; email: string; name: string | null } };
+type Connection = { id: string; user: { id: string; email: string; name: string | null; avatarUrl?: string | null } };
 type Message = {
   id: string;
   text: string;
@@ -21,7 +26,7 @@ type Message = {
   attachmentType?: string | null;
 };
 type Grouped = { title: string; items: (Message | RoomMessage)[] };
-type AttachmentDraft = { type: 'media' | 'file'; name: string; file: File; preview?: string };
+type AttachmentDraft = { type: 'media' | 'file'; name: string; file: File; preview?: string; size: number };
 type InviteItem = {
   id: string;
   token: string;
@@ -36,12 +41,12 @@ type InviteItem = {
 type Room = {
   id: string;
   name: string;
-  owner: { id: string; email: string; name: string | null };
+  owner: { id: string; email: string; name: string | null; avatarUrl?: string | null };
   joinedAt: string;
   isOwner: boolean;
   expiresAt?: string;
 };
-type RoomMessage = { id: string; text: string; senderId: string; createdAt: string; sender: { id: string; email: string; name: string | null } };
+type RoomMessage = { id: string; text: string; senderId: string; createdAt: string; systemEventType?: string; attachmentUrl?: string | null; attachmentName?: string | null; attachmentType?: string | null; sender: { id: string; email: string; name: string | null; avatarUrl?: string | null } };
 
 const initials = (name?: string | null, email?: string) => {
   if (name && name.trim()) {
@@ -56,10 +61,123 @@ const initials = (name?: string | null, email?: string) => {
   return '?';
 };
 
+const avatarColors = [
+  'from-violet-500 to-purple-600',
+  'from-blue-500 to-indigo-600',
+  'from-emerald-500 to-teal-600',
+  'from-amber-500 to-orange-500',
+  'from-rose-500 to-pink-500',
+  'from-cyan-500 to-blue-500',
+] as const;
+
+const getAvatarGradient = (userId: string) => {
+  let n = 0;
+  for (let i = 0; i < userId.length; i++) n += userId.charCodeAt(i);
+  return avatarColors[Math.abs(n) % avatarColors.length];
+};
+
+const decodeAttachmentName = (value?: string | null) => {
+  if (!value) return '';
+  if (!/[ÐÑ]/.test(value)) return value;
+
+  try {
+    const bytes = Uint8Array.from([...value].map((char) => char.charCodeAt(0)));
+    const decoded = new TextDecoder('utf-8').decode(bytes);
+    const originalNoise = (value.match(/[ÐÑ]/g) || []).length;
+    const decodedNoise = (decoded.match(/[ÐÑ]/g) || []).length;
+    return decodedNoise < originalNoise ? decoded : value;
+  } catch {
+    return value;
+  }
+};
+
+const formatFileSize = (bytes?: number | null) => {
+  if (!bytes || Number.isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes >= 10 * 1024 ? 0 : 1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+};
+
+const formatRelativeTime = (dateString: string | undefined, now: number, isEn: boolean) => {
+  if (!dateString) return isEn ? 'recently' : 'недавно';
+  const diff = Math.max(0, now - new Date(dateString).getTime());
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 60) return isEn ? `${Math.max(1, minutes)} min ago` : `${Math.max(1, minutes)} мин назад`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return isEn ? `${hours} hour${hours > 1 ? 's' : ''} ago` : `${hours} ч назад`;
+  const days = Math.floor(hours / 24);
+  return isEn ? (days === 1 ? 'Yesterday' : `${days} days ago`) : days === 1 ? 'Вчера' : `${days} д назад`;
+};
+
+const getLatestIncomingTimestamp = <T extends { senderId: string; createdAt: string }>(
+  items: T[],
+  currentUserId?: string,
+) => {
+  if (!currentUserId) return null;
+  const latestIncoming = [...items].reverse().find((item) => item.senderId !== currentUserId);
+  return latestIncoming?.createdAt || null;
+};
+
+const isTimestampNewer = (nextTimestamp: string | null, prevTimestamp?: string) => {
+  if (!nextTimestamp) return false;
+  if (!prevTimestamp) return true;
+  return new Date(nextTimestamp).getTime() > new Date(prevTimestamp).getTime();
+};
+
+const renderAvatar = ({
+  name,
+  email,
+  photo,
+  userId,
+  className = '',
+}: {
+  name?: string | null;
+  email?: string;
+  photo?: string | null;
+  userId?: string;
+  className?: string;
+  textClassName?: string;
+}) => {
+  const gradient = userId ? getAvatarGradient(userId) : 'from-slate-500 to-slate-600';
+  const fallbackEl = (
+    <div className={`absolute inset-0 flex items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold text-white ${gradient}`}>
+      {initials(name, email)}
+    </div>
+  );
+  const sizeClass = className.includes('h-') ? '' : 'h-10 w-10';
+  return (
+    <div className={`relative shrink-0 rounded-full overflow-hidden ${sizeClass} ${className}`}>
+      {fallbackEl}
+      {photo && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={photo}
+          alt=""
+          className="relative z-10 h-full w-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
 function DashboardInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, accessToken, logout, hydrated } = useAuthStore();
+  const { language } = useLanguage();
+  const { theme } = useTheme();
+  const addNotification = useNotificationsStore((s) => s.addNotification);
+  const unreadDirectIds = useChatActivityStore((s) => s.unreadDirectIds);
+  const unreadRoomIds = useChatActivityStore((s) => s.unreadRoomIds);
+  const addUnreadDirect = useChatActivityStore((s) => s.addUnreadDirect);
+  const addUnreadRoom = useChatActivityStore((s) => s.addUnreadRoom);
+  const markDirectAsRead = useChatActivityStore((s) => s.markDirectAsRead);
+  const markRoomAsRead = useChatActivityStore((s) => s.markRoomAsRead);
+  const profilePhoto = useCurrentUserAvatar(user?.id, user?.avatarUrl);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteLink, setInviteLink] = useState('');
@@ -77,18 +195,36 @@ function DashboardInner() {
   const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachMenuRef = useRef<HTMLDivElement | null>(null);
   const [search, setSearch] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatRef = useRef<HTMLDivElement | null>(null);
-  const [joinToken, setJoinToken] = useState('');
+  const [isInviteAccordionOpen, setIsInviteAccordionOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [creatingLink, setCreatingLink] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'failed'>('idle');
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const lastKnownIncomingDirectRef = useRef<Record<string, string>>({});
+  const lastKnownIncomingRoomRef = useRef<Record<string, string>>({});
+  const messagesCacheRef = useRef<{ rooms: Record<string, RoomMessage[]>; direct: Record<string, Message[]> }>({ rooms: {}, direct: {} });
+
+  useEffect(() => {
+    if (!showAttach) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const el = attachMenuRef.current;
+      if (el && !el.contains(e.target as Node)) setShowAttach(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [showAttach]);
 
   const selectedName = useMemo(
     () => (selectedRoom ? selectedRoom.name : selected?.user.name || selected?.user.email || ''),
     [selected, selectedRoom],
   );
+  const isEn = language === 'en';
+  const isDarkTheme = theme === 'dark';
+  const selectedDirectPhoto = selected?.user.avatarUrl || (selected?.user.id && selected?.user.id === user?.id ? profilePhoto : null);
   const filteredConnections = useMemo(() => {
     if (!search.trim()) return connections;
     const q = search.toLowerCase();
@@ -96,6 +232,16 @@ function DashboardInner() {
       (c) => c.user.email.toLowerCase().includes(q) || (c.user.name || '').toLowerCase().includes(q),
     );
   }, [connections, search]);
+
+  const markDirectThreadAsRead = useCallback((peerId: string, latestTimestamp?: string | null) => {
+    markDirectAsRead(peerId);
+    if (latestTimestamp) lastKnownIncomingDirectRef.current[peerId] = latestTimestamp;
+  }, [markDirectAsRead]);
+
+  const markRoomThreadAsRead = useCallback((roomId: string, latestTimestamp?: string | null) => {
+    markRoomAsRead(roomId);
+    if (latestTimestamp) lastKnownIncomingRoomRef.current[roomId] = latestTimestamp;
+  }, [markRoomAsRead]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -131,22 +277,46 @@ function DashboardInner() {
   }, [connections, searchParams]);
 
   useEffect(() => {
+    if (!rooms.length) return;
+    const roomId = searchParams.get('room');
+    if (!roomId) return;
+    const found = rooms.find((room) => room.id === roomId);
+    if (found) {
+      setSelected(null);
+      setSelectedRoom(found);
+      markRoomAsRead(found.id);
+    }
+  }, [markRoomAsRead, rooms, searchParams]);
+
+  useEffect(() => {
     if (!selected) {
       setMessages([]);
       return;
     }
+    const cached = messagesCacheRef.current.direct[selected.user.id];
+    if (cached?.length) setMessages(cached);
+    else setMessages([]);
     setLoadingMessages(true);
     api<Message[]>(`/messages?with=${selected.user.id}`, { method: 'GET' })
-      .then(setMessages)
+      .then((data) => {
+        setMessages(data);
+        messagesCacheRef.current.direct[selected.user.id] = data;
+      })
       .catch(() => setMessages([]))
       .finally(() => setLoadingMessages(false));
   }, [selected]);
 
   useEffect(() => {
     if (!selected) return;
+    const peerId = selected.user.id;
     const id = setInterval(() => {
-      api<Message[]>(`/messages?with=${selected.user.id}`, { method: 'GET' }).then(setMessages).catch(() => {});
-    }, 3000);
+      api<Message[]>(`/messages?with=${peerId}`, { method: 'GET' })
+        .then((data) => {
+          setMessages(data);
+          messagesCacheRef.current.direct[peerId] = data;
+        })
+        .catch(() => {});
+    }, 1000);
     return () => clearInterval(id);
   }, [selected]);
 
@@ -155,18 +325,30 @@ function DashboardInner() {
       setRoomMessages([]);
       return;
     }
+    const cached = messagesCacheRef.current.rooms[selectedRoom.id];
+    if (cached?.length) setRoomMessages(cached);
+    else setRoomMessages([]);
     setLoadingRoomMessages(true);
     api<RoomMessage[]>(`/rooms/${selectedRoom.id}/messages`, { method: 'GET' })
-      .then(setRoomMessages)
+      .then((data) => {
+        setRoomMessages(data);
+        messagesCacheRef.current.rooms[selectedRoom.id] = data;
+      })
       .catch(() => setRoomMessages([]))
       .finally(() => setLoadingRoomMessages(false));
   }, [selectedRoom]);
 
   useEffect(() => {
     if (!selectedRoom) return;
+    const roomId = selectedRoom.id;
     const id = setInterval(() => {
-      api<RoomMessage[]>(`/rooms/${selectedRoom.id}/messages`, { method: 'GET' }).then(setRoomMessages).catch(() => {});
-    }, 3000);
+      api<RoomMessage[]>(`/rooms/${roomId}/messages`, { method: 'GET' })
+        .then((data) => {
+          setRoomMessages(data);
+          messagesCacheRef.current.rooms[roomId] = data;
+        })
+        .catch(() => {});
+    }, 1000);
     return () => clearInterval(id);
   }, [selectedRoom]);
 
@@ -179,6 +361,110 @@ function DashboardInner() {
     requestAnimationFrame(scrollToBottom);
     setTimeout(scrollToBottom, 80);
   }, [messages, roomMessages]);
+
+  useEffect(() => {
+    if (!user?.id || !connections.length) return;
+
+    let cancelled = false;
+
+    const pollDirectUnread = async () => {
+      const results = await Promise.all(
+        connections.map(async (connection) => {
+          try {
+            const thread = await api<Message[]>(`/messages?with=${connection.user.id}`, { method: 'GET' });
+            return { peerId: connection.user.id, thread };
+          } catch {
+            return { peerId: connection.user.id, thread: [] as Message[] };
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      results.forEach(({ peerId, thread }) => {
+        const latestIncoming = getLatestIncomingTimestamp(thread, user.id);
+        const previousIncoming = lastKnownIncomingDirectRef.current[peerId];
+
+        if (!previousIncoming) {
+          if (latestIncoming) lastKnownIncomingDirectRef.current[peerId] = latestIncoming;
+          return;
+        }
+
+        if (isTimestampNewer(latestIncoming, previousIncoming)) {
+          lastKnownIncomingDirectRef.current[peerId] = latestIncoming!;
+          if (selected?.user.id !== peerId) {
+            addUnreadDirect(peerId);
+          }
+        }
+      });
+    };
+
+    void pollDirectUnread();
+    const intervalId = setInterval(() => void pollDirectUnread(), 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [addUnreadDirect, connections, selected?.user.id, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !rooms.length) return;
+
+    let cancelled = false;
+
+    const pollRoomUnread = async () => {
+      const results = await Promise.all(
+        rooms.map(async (room) => {
+          try {
+            const thread = await api<RoomMessage[]>(`/rooms/${room.id}/messages`, { method: 'GET' });
+            return { roomId: room.id, thread };
+          } catch {
+            return { roomId: room.id, thread: [] as RoomMessage[] };
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      results.forEach(({ roomId, thread }) => {
+        const latestIncoming = getLatestIncomingTimestamp(thread, user.id);
+        const previousIncoming = lastKnownIncomingRoomRef.current[roomId];
+
+        if (!previousIncoming) {
+          if (latestIncoming) lastKnownIncomingRoomRef.current[roomId] = latestIncoming;
+          return;
+        }
+
+        if (isTimestampNewer(latestIncoming, previousIncoming)) {
+          lastKnownIncomingRoomRef.current[roomId] = latestIncoming!;
+          if (selectedRoom?.id !== roomId) {
+            addUnreadRoom(roomId);
+          }
+        }
+      });
+    };
+
+    void pollRoomUnread();
+    const intervalId = setInterval(() => void pollRoomUnread(), 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [addUnreadRoom, rooms, selectedRoom?.id, user?.id]);
+
+  useEffect(() => {
+    if (!selected?.user.id || !user?.id) return;
+    const latestIncoming = getLatestIncomingTimestamp(messages, user.id);
+    markDirectThreadAsRead(selected.user.id, latestIncoming);
+  }, [markDirectThreadAsRead, messages, selected?.user.id, user?.id]);
+
+  useEffect(() => {
+    if (!selectedRoom?.id || !user?.id) return;
+    const latestIncoming = getLatestIncomingTimestamp(roomMessages, user.id);
+    markRoomThreadAsRead(selectedRoom.id, latestIncoming);
+  }, [markRoomThreadAsRead, roomMessages, selectedRoom?.id, user?.id]);
 
   const chatMessages = useMemo(() => (selectedRoom ? roomMessages : messages), [selectedRoom, roomMessages, messages]);
   const isRoomChat = !!selectedRoom;
@@ -214,6 +500,11 @@ function DashboardInner() {
       if (link) {
         setInviteLink(link);
         setCopyStatus('idle');
+        addNotification({
+          type: 'invite',
+          title: isEn ? 'Invite link created' : 'Ссылка приглашения создана',
+          message: isEn ? 'A new invite link is ready to share.' : 'Новая ссылка приглашения готова для отправки.',
+        });
         try {
           await navigator.clipboard?.writeText(link);
           setCopyStatus('success');
@@ -236,59 +527,88 @@ function DashboardInner() {
     }
   };
 
-  const joinByToken = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    const raw = joinToken.trim();
-    if (!raw) return;
-    const token = raw.includes('/invite/') ? raw.split('/invite/').pop() || raw : raw;
-    try {
-      const res = await api<{ ok: boolean; contact?: { id: string; email: string; name: string | null } }>(
-        '/connections/accept',
-        { method: 'POST', body: JSON.stringify({ token }) },
-      );
-      if (!res.ok) {
-        setError('Не удалось присоединиться по коду');
-        return;
-      }
-      setJoinToken('');
-      api<Connection[]>('/connections', { method: 'GET' })
-        .then((list) => {
-          setConnections(list);
-          if (res.contact?.id) {
-            const found = list.find((c) => c.user.id === res.contact!.id);
-            if (found) setSelected(found);
-          }
-        })
-        .catch(() => {});
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка запроса');
-    }
-  };
-
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isRoomChat) {
-      if (!selectedRoom || !messageText.trim()) return;
-      const text = messageText.trim();
+      if (!selectedRoom || (!messageText.trim() && !attachment) || !user) return;
+      const textToSend = messageText.trim();
+      const currentAttachment = attachment;
       setMessageText('');
+      setShowAttach(false);
+      clearAttachment();
+      const tempId = `temp-room-${Date.now()}`;
+      const optimistic: RoomMessage = {
+        id: tempId,
+        text: textToSend || (currentAttachment?.name ?? ''),
+        senderId: user.id,
+        createdAt: new Date().toISOString(),
+        attachmentUrl: undefined,
+        attachmentName: currentAttachment?.name,
+        attachmentType: undefined,
+        sender: { id: user.id, email: user.email ?? '', name: user.name ?? null, avatarUrl: user.avatarUrl ?? null },
+      };
+      setRoomMessages((prev) => {
+        const next = [...prev, optimistic];
+        messagesCacheRef.current.rooms[selectedRoom.id] = next;
+        return next;
+      });
       try {
+        let uploaded: { url: string; originalName: string; mimeType: string } | null = null;
+        if (currentAttachment) {
+          const fd = new FormData();
+          fd.append('file', currentAttachment.file, currentAttachment.name);
+          const token = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '');
+          const res = await fetch(`${API_URL}/messages/upload`, {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            body: fd,
+          });
+          if (!res.ok) throw new Error('Не удалось загрузить файл');
+          uploaded = await res.json();
+        }
         const msg = await api<RoomMessage>(`/rooms/${selectedRoom.id}/messages`, {
           method: 'POST',
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({
+            text: textToSend,
+            attachment: uploaded ? { url: uploaded.url, name: uploaded.originalName, type: uploaded.mimeType } : undefined,
+          }),
         });
-        setRoomMessages((prev) => [...prev, msg]);
+        setRoomMessages((prev) => prev.map((m) => (m.id === tempId ? msg : m)));
+        const roomCache = messagesCacheRef.current.rooms[selectedRoom.id];
+        if (roomCache) messagesCacheRef.current.rooms[selectedRoom.id] = roomCache.map((m) => (m.id === tempId ? msg : m));
       } catch {
-        // ignore
+        setRoomMessages((prev) => prev.filter((m) => m.id !== tempId));
+        if (currentAttachment) setAttachment(currentAttachment);
       }
       return;
     }
 
-    if (!selected || (!messageText.trim() && !attachment)) return;
+    if (!selected || (!messageText.trim() && !attachment) || !user) return;
     const currentAttachment = attachment;
+    const textToSend = messageText.trim();
     setMessageText('');
     setShowAttach(false);
     clearAttachment();
+    const tempId = `temp-dm-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      text: textToSend,
+      senderId: user.id,
+      recipientId: selected.user.id,
+      createdAt: new Date().toISOString(),
+      attachmentUrl: undefined,
+      attachmentName: undefined,
+      attachmentType: undefined,
+    };
+    if (currentAttachment) {
+      optimisticMsg.text = optimisticMsg.text || currentAttachment.name;
+      optimisticMsg.attachmentName = currentAttachment.name;
+    }
+    setMessages((prev) => {
+      const next = [...prev, optimisticMsg];
+      messagesCacheRef.current.direct[selected.user.id] = next;
+      return next;
+    });
     try {
       let uploaded: { url: string; originalName: string; mimeType: string } | null = null;
       if (currentAttachment) {
@@ -308,19 +628,36 @@ function DashboardInner() {
         method: 'POST',
         body: JSON.stringify({
           to: selected.user.id,
-          text: messageText.trim(),
+          text: textToSend,
           attachment: uploaded ? { url: uploaded.url, name: uploaded.originalName, type: uploaded.mimeType } : undefined,
         }),
       });
-      setMessages((prev) => [...prev, msg]);
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? msg : m)));
+      const peerId = selected.user.id;
+      const cached = messagesCacheRef.current.direct[peerId];
+      if (cached) messagesCacheRef.current.direct[peerId] = cached.map((m) => (m.id === tempId ? msg : m));
     } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       if (currentAttachment) setAttachment(currentAttachment);
+    }
+  };
+
+  const deleteDirectMessage = async (messageId: string) => {
+    if (!window.confirm(isEn ? 'Delete this message?' : 'Удалить это сообщение?')) return;
+    setDeletingMessageId(messageId);
+    try {
+      await api(`/messages/${messageId}`, { method: 'DELETE' });
+      setMessages((prev) => prev.filter((message) => message.id !== messageId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : isEn ? 'Failed to delete message' : 'Не удалось удалить сообщение');
+    } finally {
+      setDeletingMessageId(null);
     }
   };
 
   const handlePick = (file: File, kind: AttachmentDraft['type']) => {
     const preview = kind === 'media' ? URL.createObjectURL(file) : undefined;
-    setAttachment({ type: kind, name: file.name, file, preview });
+    setAttachment({ type: kind, name: file.name, file, preview, size: file.size });
     setShowAttach(false);
   };
 
@@ -334,25 +671,48 @@ function DashboardInner() {
     return mime.startsWith('image/') || mime.startsWith('video/');
   };
 
-  const renderAttachmentContent = (m: Message) => {
+  const renderAttachmentContent = (m: Message | RoomMessage) => {
     if (!m.attachmentUrl) return null;
+    const attachmentName = decodeAttachmentName(m.attachmentName) || 'file';
+    const fileExtension = attachmentName.includes('.') ? attachmentName.split('.').pop()?.toUpperCase() : null;
     const media = isMediaType(m.attachmentType);
     if (media) {
       if (m.attachmentType?.startsWith('video/')) {
-        return <video controls src={m.attachmentUrl} className="w-full max-h-64 rounded-xl border border-white/10 bg-black/20" />;
+        return (
+          <div className="overflow-hidden rounded-[20px] bg-slate-950/10 dark:bg-black/20">
+            <video controls src={m.attachmentUrl} className="w-full max-h-64 bg-black/20" />
+          </div>
+        );
       }
       return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={m.attachmentUrl}
-          alt={m.attachmentName || 'media'}
-          className="w-full max-h-64 rounded-xl border border-white/10 bg-black/20 object-cover"
-        />
+        <div className="overflow-hidden rounded-[20px] bg-slate-950/10 dark:bg-black/20">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={m.attachmentUrl}
+            alt={attachmentName || 'media'}
+            className="w-full max-h-72 object-cover"
+          />
+        </div>
       );
     }
     return (
-      <a href={m.attachmentUrl} download={m.attachmentName || 'file'} className="flex items-center gap-2 text-sm underline underline-offset-4">
-        📎 {m.attachmentName || 'Файл'}
+      <a
+        href={m.attachmentUrl}
+        download={attachmentName}
+        className="flex items-center gap-3 rounded-[18px] bg-slate-900/6 px-3.5 py-3 text-sm no-underline transition hover:bg-slate-900/10 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]"
+      >
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-xs font-semibold text-blue-700 dark:text-blue-200">
+          {fileExtension || 'FILE'}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{attachmentName || 'Файл'}</span>
+          <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+            {m.attachmentType?.startsWith('application/') ? 'Документ' : 'Файл'}
+          </span>
+        </span>
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-300">
+          {isEn ? 'Open' : 'Открыть'}
+        </span>
       </a>
     );
   };
@@ -360,497 +720,603 @@ function DashboardInner() {
   if (!user) return null;
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-50">
+    <main className="app-page-bg relative min-h-screen overflow-hidden text-slate-900 dark:text-slate-50">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-24 -top-32 h-72 w-72 rounded-full bg-blue-500/15 blur-3xl" />
-        <div className="absolute right-10 top-6 h-56 w-56 rounded-full bg-indigo-500/15 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-40 w-40 rounded-full bg-cyan-400/15 blur-3xl" />
+        <div className="absolute left-1/2 top-0 h-[360px] w-[420px] -translate-x-1/2 rounded-full bg-blue-500/12 blur-[120px]" />
+        <div className="absolute bottom-0 left-1/2 h-[320px] w-[300px] -translate-x-1/2 rounded-full bg-cyan-500/8 blur-[120px]" />
         <div
           className="absolute inset-0 opacity-20 mix-blend-soft-light"
           style={{
             backgroundImage:
-              'radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.08), transparent 50%), radial-gradient(1px 1px at 80% 0%, rgba(255,255,255,0.06), transparent 50%), radial-gradient(1px 1px at 50% 100%, rgba(255,255,255,0.05), transparent 50%)',
+              'radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.05), transparent 50%), radial-gradient(1px 1px at 80% 0%, rgba(255,255,255,0.04), transparent 50%), radial-gradient(1px 1px at 50% 100%, rgba(255,255,255,0.03), transparent 50%)',
           }}
         />
       </div>
 
-      <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 gap-3 px-3 py-5 md:grid-cols-[170px,360px,1fr] md:gap-5 lg:px-10">
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1360px] flex-col gap-4 px-4 py-5 lg:px-6">
+        <div className={`hidden items-center gap-3 rounded-[30px] px-6 py-4 backdrop-blur-xl md:flex ${
+          isDarkTheme
+            ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.04)]'
+            : 'bg-white/85 shadow-[0_18px_40px_-30px_rgba(148,163,184,0.45)]'
+        }`}>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="h-5 w-5 text-slate-500 dark:text-slate-400">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
+          </svg>
+          <input
+            className="w-full bg-transparent text-[15px] text-slate-900 placeholder:text-slate-500 outline-none dark:text-white"
+            placeholder={isEn ? 'Search' : 'Поиск'}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="grid min-h-[calc(100vh-7.5rem)] grid-cols-1 gap-5 md:grid-cols-[352px,1fr]">
         {/* Mobile header */}
-        <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/10 p-3 backdrop-blur md:hidden">
+        <div className={`flex items-center justify-between rounded-2xl p-3 backdrop-blur md:hidden ${
+          isDarkTheme
+            ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8)]'
+            : 'bg-white/85 shadow-[0_18px_40px_-30px_rgba(148,163,184,0.45)]'
+        }`}>
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-base font-semibold text-white shadow-lg shadow-blue-500/30">
-              {initials(user?.name, user?.email)}
-            </div>
+            {renderAvatar({
+              name: user?.name,
+              email: user?.email,
+              photo: profilePhoto,
+              userId: user?.id,
+              className: 'h-11 w-11 rounded-xl shadow-lg shadow-blue-500/20',
+            })}
             <div>
-              <div className="text-sm font-semibold text-white truncate max-w-[140px]">{user?.name || user?.email}</div>
-              <div className="text-[11px] text-slate-400">Онлайн</div>
+              <div className="max-w-[140px] truncate text-sm font-semibold text-slate-900 dark:text-white">{user?.name || user?.email}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">{isEn ? 'Online' : 'Онлайн'}</div>
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs">
-            <Link href="/profile" className="rounded-full border border-white/10 px-3 py-1 text-slate-200 hover:bg-white/10 transition">
-              Профиль
+            <Link href="/profile" className="rounded-full bg-slate-900/5 px-3 py-1 text-slate-700 transition hover:bg-slate-900/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+              {isEn ? 'Profile' : 'Профиль'}
             </Link>
-            <button onClick={() => logout()} className="rounded-full border border-white/10 px-3 py-1 text-rose-200 hover:bg-rose-500/10 transition">
-              Выход
+            <button onClick={() => logout()} className="rounded-full bg-rose-500/8 px-3 py-1 text-rose-200 hover:bg-rose-500/12 transition">
+              {isEn ? 'Logout' : 'Выход'}
             </button>
           </div>
         </div>
 
-        {/* Sidebar */}
-        <aside className="hidden md:flex flex-col gap-5 rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 via-white/5 to-white/5 p-4 backdrop-blur-2xl shadow-[0_25px_100px_-60px_rgba(0,0,0,1)]">
-          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/10 px-3 py-3 shadow-lg shadow-blue-500/10">
-            <div className="relative">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-base font-semibold text-white shadow-lg shadow-blue-500/30">
-                {initials(user?.name, user?.email)}
-              </div>
+        {/* Chats list */}
+        <section className={`flex flex-col overflow-hidden rounded-[34px] p-4 backdrop-blur-xl ${
+          isDarkTheme
+            ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
+            : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
+        } ${(selected || selectedRoom) ? 'hidden md:flex' : 'flex'}`}>
+          <div className={`flex min-h-full flex-col rounded-[28px] p-4 ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-50/60'}`}>
+            <div className={`mb-5 flex items-center gap-3 rounded-[20px] px-4 py-3.5 ${
+              isDarkTheme
+                ? 'bg-slate-900/72 shadow-[0_16px_34px_-30px_rgba(0,0,0,0.56)]'
+                : 'bg-white/96 shadow-[0_14px_30px_-24px_rgba(148,163,184,0.32)]'
+            }`}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="h-5 w-5 text-slate-500 dark:text-slate-400">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
+              </svg>
+              <input
+                className="w-full bg-transparent text-[15px] text-slate-900 placeholder:text-slate-500 outline-none dark:text-white"
+                placeholder={isEn ? 'Search' : 'Поиск'}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
-            <div className="min-w-0">
-              <div className="truncate text-[15px] font-semibold tracking-tight text-white max-w-[120px]">
-                {user?.name || user?.email}
-              </div>
-              <div className="truncate text-[11px] text-slate-300 max-w-[120px]">{user?.email}</div>
-            </div>
-          </div>
 
-          <nav className="flex flex-col gap-3 text-sm text-slate-200">
-            <Link
-              href="/profile"
-              className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:-translate-y-[1px] hover:bg-white/10 hover:shadow-lg hover:shadow-blue-500/20"
-            >
-              <span className="text-lg">👤</span>
-              <span>Профиль</span>
-            </Link>
-            <button
-              className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-left transition hover:-translate-y-[1px] hover:bg-white/10 hover:shadow-lg hover:shadow-rose-500/20 text-rose-200"
-              onClick={() => logout()}
-            >
-              <span className="text-lg">↩</span>
-              <span>Выйти</span>
-            </button>
-          </nav>
-
-          <div className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-3 shadow-[0_20px_80px_-60px_rgba(59,130,246,0.6)]">
-            <div className="text-center text-[11px] uppercase tracking-[0.2em] text-slate-300">Быстрые действия</div>
-            <button
-              className="w-full rounded-xl bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:translate-y-[-1px] hover:shadow-xl hover:shadow-blue-500/40 active:translate-y-0"
-              onClick={() => {
-                document.querySelector('input[placeholder="Придумайте пароль"]')?.scrollIntoView({ behavior: 'smooth' });
-              }}
-            >
-              Создать комнату
-            </button>
-            <button
-              className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-slate-100 transition hover:bg-white/20 hover:-translate-y-[1px]"
-              onClick={() => {
-                document.querySelector('input[placeholder="Вставьте ID"]')?.scrollIntoView({ behavior: 'smooth' });
-              }}
-            >
-              Войти по коду
-            </button>
-          </div>
-        </aside>
-
-        {/* Chats list — на мобиле скрываем при открытом чате */}
-        <section className={`flex flex-col gap-4 rounded-3xl border border-white/5 bg-white/10 p-4 backdrop-blur-xl shadow-[0_20px_80px_-50px_rgba(0,0,0,1)] ${(selected || selectedRoom) ? 'hidden md:flex' : 'flex'}`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Чаты</h2>
-              <p className="text-sm text-slate-300">Приглашайте людей и начинайте переписку</p>
-            </div>
-            <span className="hidden items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1 text-xs text-emerald-100 md:inline-flex">
-              <span className="h-2 w-2 rounded-full bg-emerald-300" />
-              Online
-            </span>
-          </div>
-          <div className="space-y-3">
-            <input
-              className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/15 focus:ring-2 focus:ring-blue-500/30"
-              placeholder="Поиск по контактам"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <div className="rounded-2xl border border-white/5 bg-white/5 p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold text-white">Приглашение по ссылке</h3>
-                  <span className="text-[11px] text-slate-400">Ссылка на 30 дней. Кто перейдёт — попадёт в контакты после регистрации.</span>
+            <div className="flex flex-1 flex-col">
+              <div>
+                <div className="mb-3 text-[13px] font-semibold tracking-tight text-slate-900 dark:text-white">{isEn ? 'Direct Messages' : 'Личные сообщения'}</div>
+                <div className="space-y-2.5">
+                  {loading ? (
+                    <p className="px-1 py-2 text-sm text-slate-400">{isEn ? 'Loading...' : 'Загрузка...'}</p>
+                  ) : filteredConnections.length === 0 ? (
+                    <p className="px-1 py-2 text-sm text-slate-400">{isEn ? 'No contacts yet.' : 'Контактов пока нет.'}</p>
+                  ) : (
+                    filteredConnections.slice(0, 6).map((c) => (
+                      (() => {
+                        const isUnread = unreadDirectIds.includes(c.user.id);
+                        return (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              setSelected(c);
+                              setSelectedRoom(null);
+                              markDirectAsRead(c.user.id);
+                            }}
+                            className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${
+                              selected?.id === c.id
+                                ? 'bg-[linear-gradient(180deg,rgba(82,104,245,0.22),rgba(33,48,102,0.16))] shadow-[0_18px_34px_-28px_rgba(79,70,229,0.38)]'
+                                : isUnread
+                                  ? 'bg-[linear-gradient(180deg,rgba(72,98,255,0.12),rgba(26,39,88,0.1))] shadow-[0_14px_28px_-24px_rgba(79,70,229,0.28)]'
+                                  : isDarkTheme
+                                    ? 'bg-slate-950/34 hover:bg-slate-900/52'
+                                    : 'bg-white/88 hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="relative">
+                                {renderAvatar({
+                                  name: c.user.name,
+                                  email: c.user.email,
+                                  photo: c.user.avatarUrl || (c.user.id === user?.id ? profilePhoto : null),
+                                  userId: c.user.id,
+                                  className: 'h-11 w-11 rounded-full',
+                                })}
+                                <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-950" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">{c.user.name || c.user.email}</div>
+                                  {isUnread && <span className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.9)]" />}
+                                </div>
+                                <div className={`truncate text-[13px] ${isUnread ? 'text-blue-700 dark:text-blue-200/90' : 'text-slate-500 dark:text-slate-300/80'}`}>{c.user.email}</div>
+                              </div>
+                              <div className={`shrink-0 text-[12px] ${isUnread ? 'text-blue-700 dark:text-blue-200/90' : 'text-slate-500 dark:text-slate-400/70'}`}>
+                                {isUnread ? (isEn ? 'New' : 'Новое') : formatRelativeTime(undefined, now, isEn)}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })()
+                    ))
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    api<InviteItem[]>('/connections/invites', { method: 'GET' })
-                      .then(setInvites)
-                      .catch(() => {})
-                  }
-                  className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-200 hover:bg-white/10 transition"
-                >
-                  Обновить
-                </button>
               </div>
-              <div className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  disabled={creatingLink}
-                  onClick={createInviteLink}
-                  className="rounded-xl bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:translate-y-[-1px] hover:shadow-xl hover:shadow-blue-500/40 active:translate-y-0 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsInviteAccordionOpen((prev) => !prev);
+                  setError('');
+                }}
+                className={`mt-4 flex w-full items-center justify-between gap-3 rounded-[20px] px-4 py-3.5 text-left text-[15px] font-semibold transition ${
+                  isDarkTheme
+                    ? 'bg-slate-950/26 text-slate-100 shadow-[0_14px_30px_-28px_rgba(0,0,0,0.48)] hover:bg-slate-900/46'
+                    : 'bg-white/82 text-slate-900 shadow-[0_12px_26px_-22px_rgba(148,163,184,0.24)] hover:bg-white'
+                }`}
+                aria-expanded={isInviteAccordionOpen}
+                aria-controls="invite-accordion-panel"
+              >
+                <span>{isEn ? 'Invite People' : 'Пригласить людей'}</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.8}
+                  stroke="currentColor"
+                  className={`h-5 w-5 text-slate-500 transition-transform dark:text-slate-300 ${isInviteAccordionOpen ? 'rotate-180' : 'rotate-0'}`}
                 >
-                  {creatingLink ? 'Создаём…' : 'Создать ссылку и скопировать'}
-                </button>
-                {error && <p className="text-xs text-red-300">{error}</p>}
-                {inviteLink && (
-                  <div className="mt-1 flex flex-col gap-2 rounded-xl border border-white/5 bg-white/5 p-2">
-                    {copyStatus === 'success' && (
-                      <div className="text-[11px] uppercase tracking-wide text-green-300">Ссылка скопирована в буфер</div>
-                    )}
-                    {copyStatus === 'failed' && (
-                      <div className="text-[11px] text-amber-300">Не удалось скопировать. Нажмите «Копировать» ниже.</div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <div className="min-w-0 break-all text-xs text-slate-200">{inviteLink}</div>
-                      <button
-                        type="button"
-                        className="shrink-0 rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-200 hover:bg-white/10 transition"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard?.writeText(inviteLink);
-                            setCopyStatus('success');
-                          } catch {
-                            setCopyStatus('failed');
-                          }
-                        }}
-                      >
-                        Копировать
-                      </button>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </button>
+
+              <div
+                id="invite-accordion-panel"
+                className={`grid overflow-hidden transition-all duration-300 ease-out ${
+                  isInviteAccordionOpen ? 'mt-3 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                }`}
+              >
+                <div className="min-h-0">
+                  <div
+                    className={`rounded-[22px] p-3 transition-transform duration-300 ease-out ${
+                      isDarkTheme
+                        ? 'bg-slate-950/26 shadow-[0_14px_30px_-28px_rgba(0,0,0,0.48)]'
+                        : 'bg-white/86 shadow-[0_12px_26px_-22px_rgba(148,163,184,0.24)]'
+                    } ${
+                      isInviteAccordionOpen ? 'translate-y-0' : '-translate-y-2'
+                    }`}
+                  >
+                  <button
+                    type="button"
+                    disabled={creatingLink}
+                    onClick={createInviteLink}
+                    className="mb-3 w-full rounded-[18px] bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {creatingLink ? (isEn ? 'Creating…' : 'Создаём…') : (isEn ? 'Create invite link' : 'Создать ссылку')}
+                  </button>
+                  {error && <p className="mb-2 text-xs text-rose-300">{error}</p>}
+                  {inviteLink && (
+                      <div className={`mb-3 rounded-[18px] p-3 ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-100/80'}`}>
+                      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">{isEn ? 'Invite link' : 'Ссылка'}</div>
+                      <div className="break-all text-xs leading-5 text-slate-600 dark:text-slate-300">{inviteLink}</div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-full bg-slate-900/6 px-3 py-1.5 text-[11px] text-slate-700 transition hover:bg-slate-900/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/14"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard?.writeText(inviteLink);
+                              setCopyStatus('success');
+                            } catch {
+                              setCopyStatus('failed');
+                            }
+                          }}
+                        >
+                          {isEn ? 'Copy' : 'Копировать'}
+                        </button>
+                        {copyStatus === 'success' && <span className="text-[11px] text-emerald-300">{isEn ? 'Copied' : 'Скопировано'}</span>}
+                        {copyStatus === 'failed' && <span className="text-[11px] text-amber-300">{isEn ? 'Copy failed' : 'Ошибка копирования'}</span>}
+                      </div>
                     </div>
+                  )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-2">
+                <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-slate-900 dark:text-white">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/5 text-[11px] dark:bg-slate-800">◌</span>
+                  <span>{isEn ? 'Rooms' : 'Комнаты'}</span>
+                </div>
+                {rooms.length === 0 ? (
+                  <p className="px-1 py-2 text-sm text-slate-400">{isEn ? 'No rooms yet.' : 'Комнат пока нет.'}</p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {rooms.map((r) => (
+                      (() => {
+                        const isUnread = unreadRoomIds.includes(r.id);
+                        return (
+                          <button
+                            key={r.id}
+                            onClick={() => {
+                              setSelected(null);
+                              setSelectedRoom(r);
+                              markRoomAsRead(r.id);
+                            }}
+                            className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${
+                              selectedRoom?.id === r.id
+                                ? 'bg-[linear-gradient(180deg,rgba(82,104,245,0.22),rgba(33,48,102,0.16))] shadow-[0_18px_34px_-28px_rgba(79,70,229,0.38)]'
+                                : isUnread
+                                  ? 'bg-[linear-gradient(180deg,rgba(72,98,255,0.12),rgba(26,39,88,0.1))] shadow-[0_14px_28px_-24px_rgba(79,70,229,0.28)]'
+                                  : isDarkTheme
+                                    ? 'bg-slate-950/34 hover:bg-slate-900/52'
+                                    : 'bg-white/88 hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 to-blue-500 text-base text-white">
+                                {r.isOwner ? '✦' : '🔒'}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">{r.name}</div>
+                                  {isUnread && <span className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.9)]" />}
+                                </div>
+                                <div className={`truncate text-[13px] ${isUnread ? 'text-blue-700 dark:text-blue-200/90' : 'text-slate-500 dark:text-slate-300/80'}`}>
+                                  {r.isOwner ? (isEn ? 'Your room' : 'Ваша комната') : (r.owner.name || r.owner.email)}
+                                </div>
+                              </div>
+                              <div className={`shrink-0 text-[12px] ${isUnread ? 'text-blue-700 dark:text-blue-200/90' : 'text-slate-500 dark:text-slate-400/70'}`}>
+                                {isUnread ? (isEn ? 'New' : 'Новое') : formatRelativeTime(r.joinedAt, now, isEn)}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })()
+                    ))}
                   </div>
                 )}
               </div>
-          <div className="mt-3 space-y-2 rounded-xl border border-white/5 bg-white/5 p-2">
-            <div className="text-[11px] uppercase tracking-wide text-slate-400">У меня есть код/ссылка</div>
-            <form onSubmit={joinByToken} className="flex flex-col gap-2">
-              <input
-                type="text"
-                className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/15 focus:ring-2 focus:ring-blue-500/30"
-                value={joinToken}
-                onChange={(e) => setJoinToken(e.target.value)}
-                placeholder="Вставьте ссылку или токен"
-              />
-              <button
-                type="submit"
-                className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 transition"
-              >
-                Присоединиться
-              </button>
-            </form>
-          </div>
-              {invites.length > 0 && (
-                <div className="mt-3 space-y-2 rounded-xl border border-white/5 bg-white/5 p-2">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Мои приглашения</div>
-                  {invites.slice(0, 4).map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs text-slate-200 flex items-center gap-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-semibold">{inv.toEmail ?? 'Приглашение по ссылке'}</div>
-                        <div className="text-[11px] text-slate-400">
-                          до {new Date(inv.expiresAt).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <div
-                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
-                            inv.status === 'used'
-                              ? 'bg-emerald-500/15 text-emerald-200'
-                              : inv.status === 'expired'
-                              ? 'bg-rose-500/15 text-rose-200'
-                              : 'bg-blue-500/15 text-blue-200'
-                          }`}
-                        >
-                          {inv.status === 'used' ? 'Использовано' : inv.status === 'expired' ? 'Истекло' : 'Активно'}
-                        </div>
-                        <button
-                          type="button"
-                          disabled={inv.status === 'used'}
-                          className="rounded-full border border-white/10 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                          onClick={() => {
-                            api('/connections/invites/' + inv.id, { method: 'DELETE' })
-                              .then(() => api<InviteItem[]>('/connections/invites', { method: 'GET' }).then(setInvites).catch(() => {}))
-                              .catch(() => {});
-                          }}
-                        >
-                          Удалить
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {invites.length > 4 && (
-                    <div className="text-[11px] text-slate-400">и ещё {invites.length - 4}…</div>
-                  )}
-                </div>
-              )}
+              <div className="flex-1" />
             </div>
-
-          <div className="rounded-2xl border border-white/5 bg-white/5 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold text-white">Комнаты по паролю</h3>
-                <span className="text-[11px] text-slate-400">Выберите комнату, чтобы открыть чат</span>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  api<Room[]>('/rooms')
-                    .then(setRooms)
-                    .catch(() => {})
-                }
-                className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-200 hover:bg-white/10 transition"
-              >
-                Обновить
-              </button>
-            </div>
-            {rooms.length === 0 ? (
-              <p className="text-sm text-slate-300">Пока нет комнат. Создайте в профиле или присоединитесь по коду.</p>
-            ) : (
-              <div className="space-y-2">
-                {rooms.map((r) => (
-                  <button
-                    key={r.id}
-                    onClick={() => {
-                      setSelected(null);
-                      setSelectedRoom(r);
-                    }}
-                    className={`w-full rounded-2xl border px-3 py-2 text-left transition ${
-                      selectedRoom?.id === r.id
-                        ? 'border-blue-400/50 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                        : 'border-white/5 bg-white/5 hover:border-blue-300/30 hover:bg-white/10'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
-                        🔒
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-white">{r.name}</div>
-                        <div className="truncate text-[11px] text-slate-400">ID: {r.id}</div>
-                        <div className="text-[11px] text-slate-400">
-                          {r.isOwner ? 'Вы владелец' : `Владелец: ${r.owner.name || r.owner.email}`}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          </div>
-
-          <div className="flex-1 space-y-2 overflow-y-auto pr-1">
-            {loading ? (
-              <p className="text-slate-300">Загрузка...</p>
-            ) : filteredConnections.length === 0 ? (
-              <p className="text-sm text-slate-300">Контактов пока нет. Отправьте приглашение.</p>
-            ) : (
-              filteredConnections.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => {
-                    setSelected(c);
-                    setSelectedRoom(null);
-                  }}
-                  className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
-                    selected?.id === c.id
-                      ? 'border-blue-400/50 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                      : 'border-white/5 bg-white/5 hover:border-blue-300/30 hover:bg-white/10'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
-                      {initials(c.user.name, c.user.email)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-white">{c.user.name || c.user.email}</div>
-                      <div className="truncate text-xs text-slate-400">{c.user.email}</div>
-                    </div>
-                    <span className="text-xs text-blue-200">Открыть</span>
-                  </div>
-                </button>
-              ))
-            )}
           </div>
         </section>
 
-        {/* Chat panel — высота ограничена, скролл только у сообщений, поле ввода внизу зафиксировано */}
-        <section className={`relative flex flex-col overflow-hidden rounded-3xl border border-white/5 bg-white/10 backdrop-blur-xl shadow-[0_30px_140px_-80px_rgba(0,0,0,1)] min-h-[480px] max-h-[calc(100vh-5rem)] md:min-h-[560px] md:max-h-[calc(100vh-4rem)] ${(selected || selectedRoom) ? 'flex' : 'hidden md:flex'}`}>
+        {/* Chat panel */}
+        <section className={`relative flex flex-col overflow-hidden rounded-[34px] backdrop-blur-2xl min-h-[560px] max-h-[calc(100vh-5rem)] ${
+          isDarkTheme
+            ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
+            : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
+        } ${(selected || selectedRoom) ? 'flex' : 'hidden md:flex'}`}>
           {selected || selectedRoom ? (
-            <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="flex shrink-0 items-center gap-3 border-b border-white/5 bg-white/5 px-4 pb-3 pt-4 md:px-5">
+            <div className={`mx-auto flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[28px] ${isDarkTheme ? 'bg-slate-950/56' : 'bg-slate-50/62'}`}>
+              <div className={`flex shrink-0 items-center gap-4 px-7 py-6 ${
+                isDarkTheme
+                  ? 'bg-slate-900/84 shadow-[0_16px_34px_-26px_rgba(0,0,0,0.62)]'
+                  : 'bg-white/74 shadow-[0_16px_34px_-26px_rgba(148,163,184,0.26)]'
+              }`}>
                 {(selected || selectedRoom) && (
                   <button
                     type="button"
                     onClick={() => { setSelected(null); setSelectedRoom(null); }}
-                    className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white hover:bg-white/20"
+                    className="md:hidden flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900/6 text-slate-900 hover:bg-slate-900/10 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
                     aria-label="Назад к списку"
                   >
                     ←
                   </button>
                 )}
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-lg font-semibold text-white">
-                  {selectedRoom ? '🔒' : initials(selected?.user.name, selected?.user.email)}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="truncate text-lg font-semibold text-white">{selectedName}</h3>
+                {selectedRoom ? (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-[linear-gradient(180deg,rgba(255,215,64,0.12),rgba(255,255,255,0.03))] text-lg font-semibold text-amber-100 shadow-inner shadow-amber-200/10">
+                    🔒
                   </div>
-                  <p className="flex items-center gap-2 text-sm text-slate-300">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    {selectedRoom ? 'Комната' : 'онлайн'}
+                ) : (
+                  renderAvatar({
+                    name: selected?.user.name,
+                    email: selected?.user.email,
+                    photo: selectedDirectPhoto,
+                    userId: selected?.user.id,
+                    className: 'h-12 w-12 rounded-[18px]',
+                  })
+                )}
+                <div className="min-w-0">
+                  <h3 className="truncate text-[17px] font-semibold tracking-tight text-slate-900 dark:text-white">{selectedName}</h3>
+                  <p className="mt-1 flex items-center gap-2 text-[13px] text-slate-500 dark:text-slate-300/80">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.85)]" />
+                    {selectedRoom ? (isEn ? 'Room chat' : 'Комната') : (isEn ? 'Direct conversation' : 'Личный диалог')}
                   </p>
                 </div>
               </div>
 
-              <div ref={chatRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4 md:px-5">
-                {isRoomChat ? (
-                  loadingRoomMessages ? (
-                    <p className="text-slate-300">Загрузка сообщений комнаты...</p>
+              <div ref={chatRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-8">
+                <div className="mx-auto w-full max-w-[720px] space-y-6">
+                  {isRoomChat ? (
+                    loadingRoomMessages && roomMessages.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-slate-400">{isEn ? 'Loading...' : 'Загрузка...'}</p>
+                    ) : chatMessages.length === 0 ? (
+                      <p className="py-10 text-center text-sm text-slate-400">{isEn ? 'This room is quiet for now. Write the first message.' : 'В этой комнате пока тихо. Напишите первое сообщение.'}</p>
+                    ) : (
+                      groupedMessages.map((group) => (
+                        <div key={group.title} className="space-y-5">
+                          <div className="flex justify-center pb-1">
+                            <span className="inline-flex rounded-full bg-slate-900/5 px-4 py-1.5 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300/75">
+                              {group.title}
+                            </span>
+                          </div>
+                          {group.items.map((m, index) => {
+                            const rm = m as RoomMessage;
+                            const isSystemLeave = isRoomChat && rm.systemEventType === 'user_left';
+                            if (isSystemLeave) {
+                              const leaveName = rm.sender?.name || rm.sender?.email || (isEn ? 'A user' : 'Участник');
+                              return (
+                                <div key={m.id} className="flex justify-center py-2">
+                                  <span className="rounded-full bg-slate-200/80 px-4 py-1.5 text-xs font-medium text-slate-600 dark:bg-slate-600/80 dark:text-slate-300">
+                                    {isEn ? `${leaveName} left the room` : `${leaveName} покинул комнату`}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            const isMine = m.senderId === user.id;
+                            const prev = group.items[index - 1];
+                            const next = group.items[index + 1];
+                            const isPrevSameSender = prev?.senderId === m.senderId;
+                            const isNextSameSender = next?.senderId === m.senderId;
+                            const senderName = rm.sender?.name || rm.sender?.email || '';
+                            return (
+                              <div key={m.id} className={`flex gap-2.5 ${isMine ? 'justify-end items-end' : 'justify-start items-end'} ${isPrevSameSender ? 'pt-0.5' : 'pt-4'}`}>
+                                {!isMine && (
+                                  isNextSameSender ? (
+                                    <div className="h-9 w-9 shrink-0" />
+                                  ) : (
+                                    <div className="ring-2 ring-slate-200/80 dark:ring-slate-700/60 rounded-full shrink-0">
+                                      {renderAvatar({
+                                        name: rm.sender?.name,
+                                        email: rm.sender?.email,
+                                        photo: rm.sender?.avatarUrl,
+                                        userId: rm.sender?.id,
+                                        className: 'h-9 w-9',
+                                      })}
+                                    </div>
+                                  )
+                                )}
+                                <div className={`${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-4 py-2.5 shadow-sm ${
+                                  isMine
+                                    ? 'bg-indigo-500 text-white dark:bg-indigo-600'
+                                    : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
+                                }`}>
+                                  {!isMine && !isPrevSameSender && senderName && (
+                                    <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">{senderName}</div>
+                                  )}
+                                  {rm.attachmentUrl && (
+                                    <div className="space-y-2">
+                                      <div className={`text-[11px] font-medium ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                        {isMediaType(rm.attachmentType) ? (isEn ? 'Photo/video' : 'Фото/видео') : (isEn ? 'File' : 'Файл')}
+                                      </div>
+                                      {renderAttachmentContent(rm)}
+                                      {rm.attachmentName && (
+                                        <div className={`break-all text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                          {decodeAttachmentName(rm.attachmentName)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {m.text && <div className={`text-[15px] leading-[1.45] break-words ${rm.attachmentUrl ? 'mt-2' : ''}`}>{m.text}</div>}
+                                  <div className={`mt-1 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                    {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </div>
+                                {isMine && (
+                                  isNextSameSender ? (
+                                    <div className="h-9 w-9 shrink-0" />
+                                  ) : (
+                                    <div className="ring-2 ring-indigo-200/60 dark:ring-indigo-900/50 rounded-full shrink-0">
+                                      {renderAvatar({
+                                        name: user?.name,
+                                        email: user?.email,
+                                        photo: profilePhoto,
+                                        userId: user?.id,
+                                        className: 'h-9 w-9',
+                                      })}
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))
+                    )
+                  ) : loadingMessages && messages.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-slate-400">{isEn ? 'Loading...' : 'Загрузка...'}</p>
                   ) : chatMessages.length === 0 ? (
-                    <p className="text-slate-300">В этой комнате пока тихо. Напишите первое сообщение.</p>
+                    <p className="py-10 text-center text-sm text-slate-400">{isEn ? 'No messages yet. Write the first message.' : 'Сообщений пока нет. Напишите первое сообщение.'}</p>
                   ) : (
                     groupedMessages.map((group) => (
-                      <div key={group.title} className="space-y-2">
-                        <div className="text-center text-xs text-slate-400">
-                          <span className="inline-flex rounded-full border border-white/5 bg-white/5 px-3 py-1 text-slate-200">
+                      <div key={group.title} className="space-y-5">
+                        <div className="flex justify-center pb-1">
+                            <span className="inline-flex rounded-full bg-slate-900/5 px-4 py-1.5 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300/75">
                             {group.title}
                           </span>
                         </div>
-                        {group.items.map((m) => {
+                        {group.items.map((m, index) => {
                           const isMine = m.senderId === user.id;
-                          const senderName = (m as RoomMessage).sender?.name || (m as RoomMessage).sender?.email || '';
-                          const bubbleBase = `max-w-[72%] rounded-2xl px-3 py-2 text-sm shadow ${
-                            isMine
-                              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white bubble-right'
-                              : 'bg-white/10 text-white border border-white/5 bubble-left'
-                          }`;
+                          const prev = group.items[index - 1];
+                          const next = group.items[index + 1];
+                          const isPrevSameSender = prev?.senderId === m.senderId;
+                          const isNextSameSender = next?.senderId === m.senderId;
                           return (
-                            <div key={m.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                              <div className={bubbleBase}>
-                                {!isMine && senderName && (
-                                  <div className="text-[11px] font-semibold text-white/80 mb-1">{senderName}</div>
+                            <div key={m.id} className={`flex gap-2.5 ${isMine ? 'justify-end items-end' : 'justify-start items-end'} ${isPrevSameSender ? 'pt-0.5' : 'pt-4'}`}>
+                              {!isMine && (
+                                isNextSameSender ? (
+                                  <div className="h-9 w-9 shrink-0" />
+                                ) : (
+                                  <div className="ring-2 ring-slate-200/80 dark:ring-slate-600/50 rounded-full shrink-0">
+                                    {renderAvatar({
+                                      name: selected?.user.name,
+                                      email: selected?.user.email,
+                                      photo: selected?.user.avatarUrl,
+                                      userId: selected?.user.id,
+                                      className: 'h-9 w-9',
+                                    })}
+                                  </div>
+                                )
+                              )}
+                              <div className={`group relative ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-4 py-2.5 shadow-sm ${
+                                isMine
+                                  ? 'bg-indigo-500 text-white dark:bg-indigo-600'
+                                  : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
+                              }`}>
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteDirectMessage(m.id)}
+                                  disabled={deletingMessageId === m.id}
+                                  className="absolute right-2 top-2 rounded-full bg-black/5 px-2 py-1 text-[11px] text-slate-500 opacity-100 transition hover:bg-rose-500/15 hover:text-rose-600 dark:bg-white/10 dark:text-slate-400 dark:hover:bg-rose-500/25 md:opacity-0 md:group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-100"
+                                  aria-label={isEn ? 'Delete message' : 'Удалить сообщение'}
+                                  title={isEn ? 'Delete message' : 'Удалить сообщение'}
+                                >
+                                  {deletingMessageId === m.id ? (isEn ? '...' : '...') : '×'}
+                                </button>
+                                {(m as Message).attachmentUrl && (
+                                  <div className="space-y-2">
+                                    <div className={`text-[11px] font-medium ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                      {isMediaType((m as Message).attachmentType) ? 'Фото/видео' : 'Файл'}
+                                    </div>
+                                    {renderAttachmentContent(m as Message)}
+                                    {(m as Message).attachmentName && (
+                                      <div className={`break-all text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                        {decodeAttachmentName((m as Message).attachmentName)}
+                                      </div>
+                                    )}
+                                  </div>
                                 )}
-                                {m.text && <div>{m.text}</div>}
-                                <div className={`mt-1 text-[11px] opacity-70 ${isMine ? 'text-white/80' : 'text-slate-300'}`}>
+                                {m.text && <div className={`text-[15px] leading-[1.45] break-words ${(m as Message).attachmentUrl ? 'mt-2' : ''}`}>{m.text}</div>}
+                                <div className={`mt-1 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
                                   {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                               </div>
+                              {isMine && (
+                                isNextSameSender ? (
+                                  <div className="h-9 w-9 shrink-0" />
+                                ) : (
+                                  <div className="ring-2 ring-indigo-200/60 dark:ring-indigo-900/50 rounded-full shrink-0">
+                                    {renderAvatar({
+                                      name: user?.name,
+                                      email: user?.email,
+                                      photo: profilePhoto,
+                                      userId: user?.id,
+                                      className: 'h-9 w-9',
+                                    })}
+                                  </div>
+                                )
+                              )}
                             </div>
                           );
                         })}
                       </div>
                     ))
-                  )
-                ) : loadingMessages ? (
-                  <p className="text-slate-300">Загрузка сообщений...</p>
-                ) : chatMessages.length === 0 ? (
-                  <p className="text-slate-300">Сообщений пока нет. Напишите первое сообщение.</p>
-                ) : (
-                  groupedMessages.map((group) => (
-                    <div key={group.title} className="space-y-2">
-                      <div className="text-center text-xs text-slate-400">
-                        <span className="inline-flex rounded-full border border-white/5 bg-white/5 px-3 py-1 text-slate-200">
-                          {group.title}
-                        </span>
-                      </div>
-                      {group.items.map((m) => {
-                        const isMine = m.senderId === user.id;
-                        const bubbleBase = `max-w-[72%] rounded-2xl px-3 py-2 text-sm shadow ${
-                          isMine
-                            ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white bubble-right'
-                            : 'bg-white/10 text-white border border-white/5 bubble-left'
-                        }`;
-                        return (
-                          <div key={m.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                            <div className={bubbleBase}>
-                              {(m as Message).attachmentUrl && (
-                                <div className="space-y-2">
-                                  <div className="text-xs uppercase tracking-wide opacity-80">
-                                    {isMediaType((m as Message).attachmentType) ? 'Фото/видео' : 'Файл'}
-                                  </div>
-                                  {renderAttachmentContent(m as Message)}
-                                  {(m as Message).attachmentName && (
-                                    <div className="text-xs opacity-80 break-all">{(m as Message).attachmentName}</div>
-                                  )}
-                                </div>
-                              )}
-                              {m.text && <div className={(m as Message).attachmentUrl ? 'mt-2' : ''}>{m.text}</div>}
-                              <div className={`mt-1 text-[11px] opacity-70 ${isMine ? 'text-white/80' : 'text-slate-300'}`}>
-                                {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))
-                )}
+                  )}
+                </div>
               </div>
 
-              <form onSubmit={sendMessage} className="shrink-0 border-t border-white/5 bg-white/5 px-4 py-3">
-                <div className="relative flex flex-col gap-2">
-                  {!isRoomChat && attachment && (
-                    <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">📎</span>
-                        <div>
-                          <div className="font-medium">{attachment.name}</div>
-                          <div className="text-xs text-slate-300">{attachment.type === 'media' ? 'Фото/видео' : 'Файл'}</div>
+              <form onSubmit={sendMessage} className={`shrink-0 px-7 py-5 ${
+                isDarkTheme
+                  ? 'bg-slate-900/84 shadow-[0_-14px_30px_-28px_rgba(0,0,0,0.62)]'
+                  : 'bg-white/74 shadow-[0_-14px_30px_-28px_rgba(148,163,184,0.24)]'
+              }`}>
+                <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3">
+                  {attachment && (
+                    <div className="flex items-center justify-between gap-3 rounded-[20px] bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_12px_24px_-20px_rgba(148,163,184,0.32)] dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_14px_28px_-22px_rgba(0,0,0,0.72)]">
+                      <div className="flex min-w-0 items-center gap-3">
+                        {attachment.type === 'media' && attachment.preview ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={attachment.preview}
+                            alt={attachment.name}
+                            className="h-14 w-14 shrink-0 rounded-2xl object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-xs font-semibold text-blue-700 dark:text-blue-200">
+                            {attachment.name.includes('.') ? attachment.name.split('.').pop()?.slice(0, 4).toUpperCase() : 'FILE'}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{decodeAttachmentName(attachment.name)}</div>
+                          <div className="text-xs text-slate-500 dark:text-slate-300">
+                            {attachment.type === 'media' ? (isEn ? 'Photo or video' : 'Фото/видео') : (isEn ? 'File' : 'Файл')}
+                            {attachment.size ? ` • ${formatFileSize(attachment.size)}` : ''}
+                          </div>
                         </div>
                       </div>
-                      <button type="button" onClick={clearAttachment} className="text-xs text-slate-300 hover:text-white">
-                        Убрать
+                      <button
+                        type="button"
+                        onClick={clearAttachment}
+                        className="shrink-0 rounded-full bg-slate-900/6 px-3 py-1.5 text-xs text-slate-600 transition hover:bg-slate-900/10 hover:text-slate-900 dark:bg-white/[0.06] dark:text-slate-300 dark:hover:bg-white/[0.1] dark:hover:text-white"
+                      >
+                        {isEn ? 'Remove' : 'Убрать'}
                       </button>
                     </div>
                   )}
-                  <div className="relative flex items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 px-3 py-2 text-slate-50">
-                    {!isRoomChat && (
+                  <div className="relative flex items-center gap-3 rounded-[24px] bg-white/96 px-4 py-3.5 text-slate-900 shadow-[0_16px_34px_-24px_rgba(148,163,184,0.34)] dark:bg-slate-950/40 dark:text-slate-50 dark:shadow-[0_18px_36px_-26px_rgba(0,0,0,0.58)]">
+                    <div ref={attachMenuRef} className="relative">
                       <button
                         type="button"
                         onClick={() => setShowAttach((v) => !v)}
-                        className="rounded-full p-2 text-slate-200 transition hover:bg-white/10"
-                        aria-label="Прикрепить"
+                        className="rounded-full p-2 text-slate-600 transition hover:bg-slate-900/5 dark:text-slate-300 dark:hover:bg-slate-800"
+                        aria-label={isEn ? 'Attach file or photo' : 'Прикрепить файл или фото'}
+                        title={isEn ? 'Attach photo or file' : 'Прикрепить фото или файл'}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-6 w-6">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 8.25v7.5a2.25 2.25 0 0 0 4.5 0V7.5a3.75 3.75 0 1 0-7.5 0v8.25a5.25 5.25 0 0 0 10.5 0V9" />
                         </svg>
                       </button>
-                    )}
 
-                    {!isRoomChat && showAttach && (
-                      <div className="absolute bottom-full left-0 mb-3 w-56 rounded-xl border border-white/10 bg-slate-900/90 py-2 text-sm text-slate-100 shadow-xl">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-3 px-4 py-2 transition hover:bg-white/10"
-                          onClick={() => mediaInputRef.current?.click()}
-                        >
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-[11px]">
-                            +
-                          </span>
-                          Фото или видео
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-3 px-4 py-2 transition hover:bg-white/10"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-[11px]">
-                            +
-                          </span>
-                          Файл
-                        </button>
-                      </div>
-                    )}
+                      {showAttach && (
+                        <div className="absolute bottom-full left-0 mb-3 w-56 rounded-[18px] bg-white py-2 text-sm text-slate-900 shadow-2xl dark:bg-slate-950/95 dark:text-slate-100">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-4 py-2 transition hover:bg-slate-900/5 dark:hover:bg-slate-800"
+                            onClick={() => mediaInputRef.current?.click()}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/6 text-[11px] dark:bg-slate-800">
+                              +
+                            </span>
+                            Фото или видео
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-4 py-2 transition hover:bg-slate-900/5 dark:hover:bg-slate-800"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/6 text-[11px] dark:bg-slate-800">
+                              +
+                            </span>
+                            Файл
+                          </button>
+                        </div>
+                      )}
+                    </div>
 
                     <input
-                      className="flex-1 bg-transparent text-sm placeholder:text-slate-500 outline-none"
+                      className="flex-1 bg-transparent text-[15px] placeholder:text-slate-500 outline-none"
                       value={messageText}
                       onChange={(e) => {
                         setMessageText(e.target.value);
@@ -859,57 +1325,69 @@ function DashboardInner() {
                           setTimeout(() => setIsTyping(false), 1500);
                         }
                       }}
-                      placeholder={isRoomChat ? 'Сообщение в комнату...' : 'Сообщение...'}
+                      placeholder={isRoomChat ? (isEn ? 'Message to room...' : 'Сообщение в комнату...') : (isEn ? 'Message...' : 'Сообщение...')}
                     />
 
                     <button
                       type="submit"
-                      className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:translate-y-[-1px] hover:shadow-xl hover:shadow-blue-500/40 active:translate-y-0"
+                      className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-6 text-sm font-semibold text-white transition hover:brightness-110"
                     >
-                      Отправить
+                      {isEn ? 'Send' : 'Отправить'}
                     </button>
                   </div>
-                  {!isRoomChat && (
-                    <>
-                      <input
-                        ref={mediaInputRef}
-                        type="file"
-                        accept="image/*,video/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handlePick(file, 'media');
-                          e.target.value = '';
-                        }}
-                      />
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handlePick(file, 'file');
-                          e.target.value = '';
-                        }}
-                      />
-                    </>
-                  )}
+                  <>
+                    <input
+                      ref={mediaInputRef}
+                      type="file"
+                      accept="image/*,video/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handlePick(file, 'media');
+                        e.target.value = '';
+                      }}
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handlePick(file, 'file');
+                        e.target.value = '';
+                      }}
+                    />
+                  </>
                 </div>
               </form>
             </div>
           ) : (
-            <div className="relative flex h-full flex-col items-center justify-center gap-4 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-slate-900/40 to-slate-950" />
-              <div className="relative z-10 flex flex-col items-center gap-3 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/20 text-2xl">💬</div>
-                <h3 className="text-xl font-semibold text-white">Выберите контакт или комнату</h3>
-                <p className="max-w-md text-sm text-slate-300">
-                  Здесь появится переписка, как только вы выберете контакт слева или отправите приглашение/код комнаты.
+            <div className="relative flex h-full items-center justify-center overflow-hidden px-6 py-10">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(99,102,241,0.26),transparent_24%),radial-gradient(circle_at_50%_100%,rgba(59,130,246,0.12),transparent_30%)]" />
+              <div
+                className="absolute inset-0 opacity-35"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.12), transparent 55%), radial-gradient(1px 1px at 74% 26%, rgba(255,255,255,0.12), transparent 55%), radial-gradient(1px 1px at 38% 72%, rgba(255,255,255,0.08), transparent 55%), radial-gradient(1px 1px at 82% 82%, rgba(255,255,255,0.08), transparent 55%)',
+                }}
+              />
+              <div className={`relative mx-auto flex w-full max-w-[440px] flex-col items-center justify-center rounded-[32px] px-10 py-20 text-center ${
+                isDarkTheme
+                  ? 'bg-transparent shadow-none'
+                  : 'bg-white/44 shadow-[0_18px_40px_-34px_rgba(148,163,184,0.18)]'
+              }`}>
+                <div className="relative mb-8 flex h-28 w-28 items-center justify-center rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(111,102,255,0.22),rgba(61,71,155,0.22),rgba(10,17,45,0.08))]">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-[32px] tracking-[0.28em] text-slate-700 shadow-[0_10px_30px_-18px_rgba(255,255,255,0.75)]">...</div>
+                </div>
+                <h3 className="text-[38px] font-semibold tracking-tight text-slate-900 dark:text-white">{isEn ? 'Select a conversation' : 'Выберите диалог'}</h3>
+                <p className="mt-5 max-w-[300px] text-[17px] leading-8 text-slate-600 dark:text-slate-300/70">
+                  {isEn ? 'Choose a contact or room from the list to start messaging.' : 'Выберите контакт или комнату в списке, чтобы начать переписку.'}
                 </p>
               </div>
             </div>
           )}
         </section>
+      </div>
       </div>
     </main>
   );

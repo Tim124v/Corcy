@@ -15,6 +15,7 @@ model User {
   username     String?  @unique
   passwordHash String
   name         String?
+  avatarUrl    String?
   isVerified   Boolean  @default(false)
   emailVerifications EmailVerification[]
   invitesSent  Invite[]  @relation("InviteFrom")
@@ -26,6 +27,8 @@ model User {
   roomsOwned   Room[]   @relation("RoomOwner")
   roomMemberships RoomMember[] @relation("RoomMemberUser")
   roomMessages RoomMessage[] @relation("RoomMessageSender")
+  connectionRequestsSent ConnectionRequest[] @relation("ConnectionRequestFrom")
+  connectionRequestsReceived ConnectionRequest[] @relation("ConnectionRequestTo")
 }
 
 model EmailVerification {
@@ -59,6 +62,18 @@ model Connection {
   createdAt DateTime @default(now())
 
   @@unique([userIdA, userIdB])
+}
+
+model ConnectionRequest {
+  id        String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  status    String   @default("pending") // pending | accepted | rejected
+  createdAt  DateTime @default(now())
+  fromUser   User     @relation("ConnectionRequestFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("ConnectionRequestTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
 }
 
 model Message {
@@ -98,11 +113,15 @@ model RoomMember {
 }
 
 model RoomMessage {
-  id        String   @id @default(cuid())
-  roomId    String
-  senderId  String
-  text      String
-  createdAt DateTime @default(now())
-  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  sender    User     @relation("RoomMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  roomId            String
+  senderId          String
+  text              String
+  systemEventType   String?  // e.g. 'user_left' — системное сообщение в ленте комнаты
+  attachmentUrl     String?
+  attachmentName    String?
+  attachmentType    String?
+  createdAt         DateTime @default(now())
+  room              Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender            User     @relation("RoomMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
 }

@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -41,5 +41,20 @@ export class MessagesService {
         attachmentType: attachment?.type ?? null,
       },
     });
+  }
+
+  async remove(currentUserId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, senderId: true, recipientId: true },
+    });
+
+    if (!message) throw new NotFoundException('Сообщение не найдено');
+    if (message.senderId !== currentUserId && message.recipientId !== currentUserId) {
+      throw new ForbiddenException('Нет доступа к удалению сообщения');
+    }
+
+    await this.prisma.message.delete({ where: { id: messageId } });
+    return { ok: true };
   }
 }

@@ -50,7 +50,7 @@ function RegisterPageInner() {
         ok: boolean;
         needVerification?: boolean;
         email?: string;
-        user?: { id: string; email: string; name: string | null };
+        user?: { id: string; email: string; name: string | null; avatarUrl?: string | null };
         accessToken?: string;
         error?: string;
       }>('/auth/register', {

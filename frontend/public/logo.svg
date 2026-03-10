@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 320" width="256" height="320">
+  <defs>
+    <linearGradient id="connexy-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6"/>
+      <stop offset="100%" style="stop-color:#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="connexy-gradient-subtle" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#60A5FA"/>
+      <stop offset="100%" style="stop-color:#A78BFA"/>
+    </linearGradient>
+    <filter id="connexy-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#3B82F6" flood-opacity="0.5" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="connexy-outer-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur"/>
+      <feOffset in="blur" dx="0" dy="0" result="offsetBlur"/>
+      <feFlood flood-color="#8B5CF6" flood-opacity="0.4" result="color"/>
+      <feComposite in="color" in2="offsetBlur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Outer hexagon (back layer) -->
+  <polygon
+    points="128,32 176,56 176,104 128,128 80,104 80,56"
+    fill="none"
+    stroke="url(#connexy-gradient)"
+    stroke-width="2"
+    stroke-opacity="0.6"
+    filter="url(#connexy-outer-glow)"
+  />
+  <!-- Inner hexagon (front layer) - connected/overlapping -->
+  <polygon
+    points="128,52 164,70 164,98 128,116 92,98 92,70"
+    fill="url(#connexy-gradient)"
+    fill-opacity="0.9"
+    stroke="url(#connexy-gradient-subtle)"
+    stroke-width="1.5"
+    filter="url(#connexy-glow)"
+  />
+  <!-- Connection line between layers (optional accent) -->
+  <line x1="128" y1="56" x2="128" y2="70" stroke="url(#connexy-gradient-subtle)" stroke-width="1" opacity="0.8"/>
+  <!-- Text CONNEXY -->
+  <text
+    x="128"
+    y="200"
+    text-anchor="middle"
+    fill="url(#connexy-gradient)"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-size="28"
+    font-weight="700"
+    letter-spacing="0.35em"
+  >CONNEXY</text>
+</svg>

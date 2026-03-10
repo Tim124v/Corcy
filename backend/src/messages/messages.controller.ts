@@ -1,6 +1,8 @@
 import {
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   Query,
   Body,
@@ -36,6 +38,11 @@ export class MessagesController {
     @Body() body: { to: string; text?: string; attachment?: { url?: string; name?: string; type?: string } },
   ) {
     return this.messages.send(user.id, body.to, body.text || '', body.attachment);
+  }
+
+  @Delete(':id')
+  async remove(@ReqUser() user: { id: string }, @Param('id') id: string) {
+    return this.messages.remove(user.id, id);
   }
 
   @Post('upload')

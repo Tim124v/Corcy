@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { RoomsService } from './rooms.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { ReqUser } from '../auth/req-user.decorator.js';
@@ -23,6 +23,16 @@ export class RoomsController {
     return this.rooms.joinRoom(user.id, body.roomId, body.password || '');
   }
 
+  @Delete(':id')
+  async remove(@ReqUser() user: { id: string }, @Param('id') id: string) {
+    return this.rooms.deleteRoom(user.id, id);
+  }
+
+  @Post(':id/leave')
+  async leave(@ReqUser() user: { id: string }, @Param('id') id: string) {
+    return this.rooms.leaveRoom(user.id, id);
+  }
+
   @Get(':id/messages')
   async messages(@ReqUser() user: { id: string }, @Param('id') id: string) {
     return this.rooms.listMessages(user.id, id);
@@ -32,8 +42,8 @@ export class RoomsController {
   async send(
     @ReqUser() user: { id: string },
     @Param('id') id: string,
-    @Body() body: { text: string },
+    @Body() body: { text?: string; attachment?: { url?: string; name?: string; type?: string } },
   ) {
-    return this.rooms.sendMessage(user.id, id, body.text || '');
+    return this.rooms.sendMessage(user.id, id, body.text || '', body.attachment);
   }
 }

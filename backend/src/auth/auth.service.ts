@@ -117,7 +117,7 @@ export class AuthService {
         passwordHash,
         isVerified: false,
       },
-      select: { id: true, email: true, name: true, username: true },
+      select: { id: true, email: true, name: true, avatarUrl: true, username: true },
     });
 
     const code = generateSixDigitCode();
@@ -132,7 +132,7 @@ export class AuthService {
       ok: true,
       needVerification: true,
       email: user.email,
-      user: { id: user.id, email: user.email, name: user.name, username: user.username },
+      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, username: user.username },
     };
   }
 
@@ -178,7 +178,7 @@ export class AuthService {
     const accessToken = this.jwt.sign({ sub: user.id, email: user.email });
     return {
       ok: true,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },
       accessToken,
     };
   }
@@ -213,7 +213,7 @@ export class AuthService {
     const accessToken = this.jwt.sign({ sub: user.id, email: user.email });
     return {
       ok: true,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },
       accessToken,
     };
   }
