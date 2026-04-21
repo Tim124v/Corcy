@@ -7,6 +7,8 @@ import { api } from '../../../lib/api';
 import { sanitizeRedirect } from '../../../lib/sanitize-redirect';
 import { useAuthStore } from '../../../store/auth';
 import { SplineScene } from '../../../components/ui/splite';
+import { SecureInput } from '../../../components/ui/SecureInput';
+import { Button } from '../../../components/ui/Button';
 
 function RegisterPageInner() {
   const router = useRouter();
@@ -19,7 +21,6 @@ function RegisterPageInner() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -110,12 +111,12 @@ function RegisterPageInner() {
             </div>
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-blue-200/80">Connexy</p>
-              <h1 className="text-lg font-semibold text-slate-50">Private connections, refined</h1>
+              <h1 className="text-lg font-semibold text-slate-50">Приватное общение</h1>
             </div>
           </div>
           <div className="hidden text-sm text-slate-300 md:flex items-center gap-3">
-            <span className="rounded-full bg-green-500/15 px-3 py-1 text-green-200">Online</span>
-            <span className="text-slate-400">Secure by design</span>
+            <span className="rounded-full bg-green-500/15 px-3 py-1 text-green-200">Онлайн</span>
+            <span className="text-slate-400">Безопасность по умолчанию</span>
           </div>
         </header>
 
@@ -177,36 +178,25 @@ function RegisterPageInner() {
                 />
               </div>
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-sm text-slate-200">
-                  <label>Пароль (не менее 8 символов)</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="text-slate-500 transition hover:text-slate-200"
-                  >
-                    {showPassword ? 'Скрыть' : 'Показать'}
-                  </button>
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
+                <label className="text-sm text-slate-200">Пароль (не менее 8 символов)</label>
+                <SecureInput
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={setPassword}
                   placeholder="••••••••"
                   autoComplete="new-password"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
                   required
+                  className="w-full rounded-xl border border-white/10 bg-white/5 pr-[4.5rem] px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm text-slate-200">Подтвердите пароль</label>
-                <input
-                  type={showPassword ? 'text' : 'password'}
+                <SecureInput
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={setConfirmPassword}
                   placeholder="••••••••"
                   autoComplete="new-password"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
                   required
+                  className="w-full rounded-xl border border-white/10 bg-white/5 pr-[4.5rem] px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
               <div className="space-y-1.5">
@@ -221,13 +211,15 @@ function RegisterPageInner() {
                 />
               </div>
               {error && <p className="text-sm text-red-400">{error}</p>}
-              <button
+              <Button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:translate-y-[-1px] hover:shadow-xl hover:shadow-blue-500/40 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
+                loading={loading}
+                fullWidth
+                className="rounded-xl px-4 py-3 text-sm font-semibold shadow-lg shadow-blue-500/30"
               >
-                {loading ? 'Создаём...' : 'Create Account'}
-              </button>
+                {loading ? 'Создаём...' : 'Создать аккаунт'}
+              </Button>
             </form>
 
             <p className="mt-6 text-sm text-slate-400">

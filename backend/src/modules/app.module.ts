@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { UsersModule } from '../users/users.module.js';
@@ -10,6 +12,11 @@ import { RoomsModule } from '../rooms/rooms.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 1000, limit: 10 }, // 10 req/сек
+      { name: 'medium', ttl: 60_000, limit: 100 }, // 100 req/мин
+      { name: 'long', ttl: 3_600_000, limit: 1000 }, // 1000 req/час
+    ]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -17,5 +24,6 @@ import { RoomsModule } from '../rooms/rooms.module.js';
     MessagesModule,
     RoomsModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

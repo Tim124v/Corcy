@@ -8,6 +8,8 @@ import { api } from '../../lib/api';
 import { useLanguage } from '../../components/language-provider';
 import { useNotificationsStore } from '../../store/notifications';
 import { RoomsPanel } from '../../components/profile/RoomsPanel';
+import { SecureInput } from '../../components/ui/SecureInput';
+import { Button } from '../../components/ui/Button';
 
 type Room = {
   id: string;
@@ -185,13 +187,15 @@ export default function RoomsPage() {
                 <div className="app-chip rounded-full px-3 py-1.5 text-xs font-medium">
                   {isEn ? `Rooms: ${rooms.length}` : `Комнат: ${rooms.length}`}
                 </div>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => document.getElementById('my-rooms-section')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="app-secondary-button rounded-full px-3 py-1.5 text-xs font-medium transition"
+                  className="rounded-full px-3 py-1.5 text-xs font-medium"
                 >
                   {isEn ? 'My rooms below' : 'Мои комнаты ниже'}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -209,42 +213,45 @@ export default function RoomsPage() {
                   spellCheck={false}
                   className="app-input rounded-2xl px-4 py-3.5 text-sm outline-none transition focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/20"
                 />
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => void pasteRoomCode()}
                   disabled={pastingCode}
-                  className="app-secondary-button shrink-0 rounded-2xl px-4 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-70"
+                  loading={pastingCode}
+                  className="shrink-0 rounded-2xl px-4 py-3 text-sm font-medium"
                 >
                   {pastingCode ? (isEn ? 'Pasting...' : 'Вставляем...') : (isEn ? 'Paste' : 'Вставить')}
-                </button>
+                </Button>
               </div>
-              <input
-                type="password"
+              <SecureInput
                 value={roomPassword}
-                onChange={(e) => setRoomPassword(e.target.value)}
+                onChange={setRoomPassword}
                 placeholder={isEn ? 'Room password' : 'Пароль комнаты'}
                 autoComplete="new-password"
-                className="app-input rounded-2xl px-4 py-3.5 text-sm outline-none transition focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/20"
+                className="app-input rounded-2xl pr-[4.5rem] px-4 py-3.5 text-sm outline-none transition focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/20"
               />
               <div className="flex flex-wrap items-center gap-3">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => {
                     setRoomCode('');
                     setRoomPassword('');
                     setMessage('');
                   }}
-                  className="app-secondary-button rounded-2xl px-4 py-3 text-sm font-medium transition"
+                  className="rounded-2xl px-4 py-3 text-sm font-medium"
                 >
                   {isEn ? 'Clear' : 'Очистить'}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   disabled={joining}
-                  className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                  loading={joining}
+                  className="rounded-2xl px-5 py-3 text-sm font-semibold shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)]"
                 >
                   {joining ? (isEn ? 'Connecting...' : 'Подключаем...') : (isEn ? 'Join room' : 'Войти в комнату')}
-                </button>
+                </Button>
               </div>
               {message && <p className="text-sm text-slate-600 dark:text-slate-300">{message}</p>}
             </form>

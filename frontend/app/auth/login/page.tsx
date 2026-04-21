@@ -7,6 +7,8 @@ import { api } from '../../../lib/api';
 import { sanitizeRedirect } from '../../../lib/sanitize-redirect';
 import { useAuthStore } from '../../../store/auth';
 import { SplineScene } from '../../../components/ui/splite';
+import { SecureInput } from '../../../components/ui/SecureInput';
+import { Button } from '../../../components/ui/Button';
 
 function LoginPageInner() {
   const router = useRouter();
@@ -15,9 +17,11 @@ function LoginPageInner() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [twoFactorStep, setTwoFactorStep] = useState(false);
+  const [tempToken, setTempToken] = useState('');
+  const [totpCode, setTotpCode] = useState('');
 
   useEffect(() => {
     const raw = searchParams.get('redirect');
@@ -30,10 +34,19 @@ function LoginPageInner() {
     setError('');
     setLoading(true);
     try {
-      const res = await api<{ ok: boolean; user?: { id: string; email: string; name: string | null; avatarUrl?: string | null }; accessToken?: string; error?: string }>(
-        '/auth/login',
-        { method: 'POST', body: JSON.stringify({ email: email.trim(), password }) },
-      );
+      const res = await api<{
+        ok: boolean;
+        requiresTwoFactor?: boolean;
+        tempToken?: string;
+        user?: { id: string; email: string; name: string | null; avatarUrl?: string | null };
+        accessToken?: string;
+        error?: string;
+      }>('/auth/login', { method: 'POST', body: JSON.stringify({ email: email.trim(), password }) });
+      if (res.ok && res.requiresTwoFactor && res.tempToken) {
+        setTempToken(res.tempToken);
+        setTwoFactorStep(true);
+        return;
+      }
       if (!res.ok || !res.user || !res.accessToken) {
         setError(res.error || 'Неверный email или пароль');
         return;
@@ -45,6 +58,36 @@ function LoginPageInner() {
       router.replace(redirect || '/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка запроса');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitTwoFactor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api<{
+        ok: boolean;
+        user?: { id: string; email: string; name: string | null; avatarUrl?: string | null };
+        accessToken?: string;
+        error?: string;
+      }>('/auth/2fa/challenge', {
+        method: 'POST',
+        body: JSON.stringify({ tempToken, totpCode }),
+      });
+      if (!res.ok || !res.user || !res.accessToken) {
+        setError(res.error || 'Неверный код. Попробуйте снова.');
+        return;
+      }
+      setAuth(res.user, res.accessToken);
+      const raw = typeof window !== 'undefined' ? sessionStorage.getItem('auth_redirect') : null;
+      const redirect = sanitizeRedirect(raw);
+      if (raw) sessionStorage.removeItem('auth_redirect');
+      router.replace(redirect || '/');
+    } catch {
+      setError('Неверный код. Попробуйте снова.');
     } finally {
       setLoading(false);
     }
@@ -74,12 +117,12 @@ function LoginPageInner() {
             </div>
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-blue-200/80">Connexy</p>
-              <h1 className="text-lg font-semibold text-slate-50">Private connections, refined</h1>
+              <h1 className="text-lg font-semibold text-slate-50">Приватное общение</h1>
             </div>
           </div>
           <div className="hidden text-sm text-slate-300 md:flex items-center gap-3">
-            <span className="rounded-full bg-green-500/15 px-3 py-1 text-green-200">Online</span>
-            <span className="text-slate-400">Secure by design</span>
+            <span className="rounded-full bg-green-500/15 px-3 py-1 text-green-200">Онлайн</span>
+            <span className="text-slate-400">Безопасность по умолчанию</span>
           </div>
         </header>
 
@@ -115,7 +158,7 @@ function LoginPageInner() {
           <div className="order-2 lg:order-1 rounded-3xl border border-white/5 bg-slate-900/70 p-6 shadow-[0_30px_120px_-60px_rgba(0,0,0,0.9)] backdrop-blur sm:p-8 lg:p-10">
             <div className="space-y-2">
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
-                🔒 End-to-end mindset
+                🔒 Сквозное шифрование
               </span>
               <h2 className="text-3xl font-semibold leading-tight text-white">Войдите, чтобы продолжить</h2>
               <p className="text-sm text-slate-400">
@@ -123,58 +166,92 @@ function LoginPageInner() {
               </p>
             </div>
 
-            <form onSubmit={submit} className="mt-6 space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-sm text-slate-200">Email</label>
+            {twoFactorStep ? (
+              <form onSubmit={submitTwoFactor} className="mt-6 space-y-4">
+                <p className="text-sm text-slate-400">
+                  Введите код из приложения-аутентификатора
+                </p>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-2xl tracking-[0.4em] text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
+                  autoFocus
                   required
                 />
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-sm text-slate-200">
-                  <label>Пароль</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="text-slate-500 transition hover:text-slate-200"
-                  >
-                    {showPassword ? 'Скрыть' : 'Показать'}
-                  </button>
+                {error && <p className="text-sm text-red-400">{error}</p>}
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  loading={loading}
+                  fullWidth
+                  className="rounded-xl px-4 py-3 text-sm font-semibold shadow-lg shadow-blue-500/30"
+                >
+                  {loading ? 'Проверяем...' : 'Подтвердить'}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTwoFactorStep(false);
+                    setTempToken('');
+                    setTotpCode('');
+                    setError('');
+                  }}
+                  className="w-full text-center text-sm text-slate-500 transition hover:text-slate-300"
+                >
+                  ← Назад
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={submit} className="mt-6 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm text-slate-200">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
+                    required
+                  />
                 </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
-                  required
-                />
-              </div>
-              <label className="flex items-center gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
-                />
-                Запомнить меня
-              </label>
-              {error && <p className="text-sm text-red-400">{error}</p>}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:translate-y-[-1px] hover:shadow-xl hover:shadow-blue-500/40 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {loading ? 'Входим...' : 'Войти в аккаунт'}
-              </button>
-            </form>
+                <div className="space-y-1.5">
+                  <label className="text-sm text-slate-200">Пароль</label>
+                  <SecureInput
+                    value={password}
+                    onChange={setPassword}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    required
+                    className="w-full rounded-xl border border-white/10 bg-white/5 pr-[4.5rem] px-4 py-3 text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-blue-400 focus:bg-white/10 focus:ring-2 focus:ring-blue-500/40"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
+                  />
+                  Запомнить меня
+                </label>
+                {error && <p className="text-sm text-red-400">{error}</p>}
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  loading={loading}
+                  fullWidth
+                  className="rounded-xl px-4 py-3 text-sm font-semibold shadow-lg shadow-blue-500/30"
+                >
+                  {loading ? 'Входим...' : 'Войти в аккаунт'}
+                </Button>
+              </form>
+            )}
 
             <div className="mt-5 flex flex-wrap items-center gap-3 text-xs text-slate-300">
               <span className="inline-flex items-center gap-2 rounded-full bg-green-500/15 px-3 py-1 text-green-200">

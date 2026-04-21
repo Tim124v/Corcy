@@ -20,8 +20,12 @@ coverage/
 .env.local
 .env.*.local
 backend/.env
+backend/.env*
+!backend/.env.example
 frontend/.env
 frontend/.env.local
+frontend/.env*
+!frontend/.env.example
 backend/.env.local
 
 # Secrets / keys
@@ -36,15 +40,21 @@ id_ed25519
 
 # Prisma / SQLite dev DB
 backend/prisma/*.db*
+backend/prisma/generated/
 
 # Uploads
 backend/uploads/
+
+# Render / other secrets
+render-secrets.yaml
+*.secrets
 
 # IDE / OS junk
 .DS_Store
 .idea/
 .vscode/
 *.swp
+*.swo
 .*.swp
 *~
 

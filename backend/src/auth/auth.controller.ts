@@ -1,49 +1,189 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Req,
+  Res,
+  HttpCode,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { createHash } from 'crypto';
 import { AuthService } from './auth.service.js';
+import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { ReqUser } from './req-user.decorator.js';
+import { TokenRefreshService } from '../security/token-refresh.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { AuditLogService } from '../security/audit-log.service.js';
+import { TwoFactorService } from '../security/two-factor.service.js';
+import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import {
+  RegisterSchema,
+  RegisterDto,
+  LoginSchema,
+  LoginDto,
+  TwoFactorChallengeSchema,
+  TwoFactorChallengeDto,
+  TwoFactorActivateSchema,
+  TwoFactorActivateDto,
+  VerifyEmailSchema,
+  VerifyEmailDto,
+  ResendVerificationSchema,
+  ResendVerificationDto,
+} from './auth.schemas.js';
+import { clearRefreshCookie, REFRESH_COOKIE_NAME, setRefreshCookie } from './cookie.util.js';
+import { TempToken, type TempTokenPayload } from './temp-token.util.js';
+
+function clientMeta(req: Request): { ipAddress?: string; userAgent?: string } {
+  const ip = req.ip || req.socket?.remoteAddress || undefined;
+  const ua = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined;
+  return { ipAddress: ip, userAgent: ua };
+}
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly tokens: TokenRefreshService,
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+    private readonly twoFactor: TwoFactorService,
+  ) {}
 
   @Post('register')
-  async register(
-    @Body()
-    body: {
-      email: string;
-      password: string;
-      confirmPassword?: string;
-      name?: string;
-    },
-  ) {
-    const { email, password, confirmPassword, name } = body || {};
-    if (!email || !password) return { ok: false, error: 'Email and password are required' };
-    const emailTrim = String(email).trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(emailTrim)) return { ok: false, error: 'Invalid email format' };
-    if (password.length < 8) return { ok: false, error: 'Password must be at least 8 characters' };
-    if (confirmPassword !== undefined && confirmPassword !== password)
-      return { ok: false, error: 'Passwords do not match' };
-    return this.auth.register(emailTrim, password, { name });
+  async register(@Body(new ZodValidationPipe(RegisterSchema)) body: RegisterDto) {
+    return this.auth.register(body.email, body.password, { name: body.name });
   }
 
   @Post('verify-email')
-  async verifyEmail(@Body() body: { email: string; code: string }) {
-    const { email, code } = body || {};
-    if (!email || !code) return { ok: false, error: 'Email and code are required' };
-    return this.auth.verifyEmail(String(email).trim(), String(code));
+  async verifyEmail(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body(new ZodValidationPipe(VerifyEmailSchema)) body: VerifyEmailDto,
+  ) {
+    return this.auth.verifyEmail(body.email, body.code, clientMeta(req), res);
   }
 
   @Post('resend-verification')
-  async resendVerification(@Body() body: { email: string }) {
-    const { email } = body || {};
-    if (!email) return { ok: false, error: 'Email is required' };
-    return this.auth.resendVerification(String(email).trim());
+  async resendVerification(@Body(new ZodValidationPipe(ResendVerificationSchema)) body: ResendVerificationDto) {
+    return this.auth.resendVerification(body.email);
   }
 
   @Post('login')
-  async login(@Body() body: { email: string; password: string }) {
-    const { email, password } = body || {};
-    if (!email || !password) return { ok: false, error: 'Email and password are required' };
-    return this.auth.login(email, password);
+  async login(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body(new ZodValidationPipe(LoginSchema)) body: LoginDto,
+  ) {
+    return this.auth.login(body.email, body.password, clientMeta(req), res);
+  }
+
+  @Post('2fa/challenge')
+  @HttpCode(200)
+  async twoFactorChallenge(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body(new ZodValidationPipe(TwoFactorChallengeSchema)) body: TwoFactorChallengeDto,
+  ) {
+    let payload: TempTokenPayload;
+    try {
+      payload = TempToken.verify(body.tempToken);
+    } catch {
+      throw new UnauthorizedException('Временный токен недействителен или истёк');
+    }
+    const valid = await this.twoFactor.verifyTotp(payload.sub, body.totpCode);
+    if (!valid) {
+      await this.audit.log({
+        userId: payload.sub,
+        action: '2FA_CHALLENGE_FAILED',
+        ...clientMeta(req),
+        severity: 'HIGH',
+      });
+      throw new UnauthorizedException('Неверный код двухфакторной аутентификации');
+    }
+    await this.audit.log({
+      userId: payload.sub,
+      action: 'LOGIN_2FA_SUCCESS',
+      ...clientMeta(req),
+      severity: 'LOW',
+    });
+    return this.auth.issueFullTokens(payload.sub, clientMeta(req), res);
+  }
+
+  @Post('refresh')
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: { refreshToken?: string },
+  ) {
+    const fromCookie = req.cookies?.[REFRESH_COOKIE_NAME];
+    const fromBody = body?.refreshToken;
+    const raw =
+      typeof fromCookie === 'string' && fromCookie.length > 0
+        ? fromCookie
+        : typeof fromBody === 'string' && fromBody.length > 0
+          ? fromBody
+          : undefined;
+    if (!raw) return { ok: false, error: 'Refresh token is required' };
+    try {
+      // Чтобы вернуть user при refresh, достаём userId по текущему refresh токену
+      // (перед ротацией, т.к. rotate удаляет старый токен).
+      const tokenHash = createHash('sha256').update(raw).digest('hex');
+      const stored = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
+      const user = stored
+        ? await this.prisma.user.findUnique({
+            where: { id: stored.userId },
+            select: { id: true, email: true, name: true, avatarUrl: true },
+          })
+        : null;
+
+      const pair = await this.tokens.rotate(raw, clientMeta(req));
+      setRefreshCookie(res, pair.refreshToken);
+      if (!user) return { ok: false, error: 'User not found' };
+      return { ok: true, accessToken: pair.accessToken, user };
+    } catch {
+      return { ok: false, error: 'Invalid or expired refresh token' };
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response, @ReqUser() user: { id: string }) {
+    clearRefreshCookie(res);
+    await this.tokens.revokeAllForUser(user.id);
+    await this.audit.log({
+      userId: user.id,
+      action: 'USER_LOGOUT',
+      ...clientMeta(req),
+      severity: 'LOW',
+    });
+    return { ok: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/setup')
+  async twoFaSetup(@ReqUser() user: { id: string; email: string }) {
+    const gate = await this.twoFactor.canSetup(user.id);
+    if (!gate.ok) return { ok: false, error: gate.error };
+    const result = await this.twoFactor.generateSecret(user.id, gate.email);
+    await this.audit.log({ userId: user.id, action: '2FA_SETUP_INITIATED', severity: 'MEDIUM' });
+    return {
+      ok: true,
+      qrCode: result.qrCode,
+      backupCodes: result.backupCodes,
+      message: 'Сохраните резервные коды в надёжном месте.',
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/activate')
+  async twoFaActivate(
+    @ReqUser() user: { id: string },
+    @Body(new ZodValidationPipe(TwoFactorActivateSchema)) body: TwoFactorActivateDto,
+  ) {
+    const ok = await this.twoFactor.activateTotp(user.id, body.token);
+    if (!ok) return { ok: false, error: 'Invalid TOTP code' };
+    return { ok: true };
   }
 }

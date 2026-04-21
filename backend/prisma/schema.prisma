@@ -17,6 +17,11 @@ model User {
   name         String?
   avatarUrl    String?
   isVerified   Boolean  @default(false)
+  totpSecret          String?
+  pendingTotpSecret   String?
+  totpEnabled         Boolean  @default(false)
+  totpEnabledAt       DateTime?
+  backupCodes         String[] @default([])
   emailVerifications EmailVerification[]
   invitesSent  Invite[]  @relation("InviteFrom")
   invitesUsed  Invite[]  @relation("InviteUsedBy")
@@ -29,6 +34,7 @@ model User {
   roomMessages RoomMessage[] @relation("RoomMessageSender")
   connectionRequestsSent ConnectionRequest[] @relation("ConnectionRequestFrom")
   connectionRequestsReceived ConnectionRequest[] @relation("ConnectionRequestTo")
+  refreshTokens RefreshToken[]
 }
 
 model EmailVerification {
@@ -43,6 +49,7 @@ model EmailVerification {
 model Invite {
   id         String    @id @default(cuid())
   token      String    @unique
+  tokenHash  String?   @unique
   fromUserId String
   fromUser   User      @relation("InviteFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
   toEmail    String?   // null = приглашение по ссылке (без email)
@@ -51,6 +58,9 @@ model Invite {
   usedById   String?
   usedBy     User?     @relation("InviteUsedBy", fields: [usedById], references: [id])
   createdAt  DateTime  @default(now())
+  usedCount  Int       @default(0)
+  maxUses    Int?
+  isActive   Boolean   @default(true)
 }
 
 model Connection {
@@ -124,4 +134,49 @@ model RoomMessage {
   createdAt         DateTime @default(now())
   room              Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   sender            User     @relation("RoomMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  userId      String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  ipAddress   String?
+  userAgent   String?
+  severity    String   @default("LOW")
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Rate limiting — персистентный счётчик попыток (защита от брутфорса)
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique // формат: "action:identifier", например "verify:user@mail.com"
+  count     Int      @default(1)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+  @@index([resetAt])
+  @@map("rate_limits")
 }

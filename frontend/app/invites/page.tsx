@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../../store/auth';
 import { api } from '../../lib/api';
 import { useLanguage } from '../../components/language-provider';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Button } from '../../components/ui/Button';
 import { useNotificationsStore } from '../../store/notifications';
 
 type InviteItem = {
@@ -16,8 +18,8 @@ type InviteItem = {
   expiresAt: string;
   usedAt: string | null;
   usedById: string | null;
-  status: 'active' | 'expired' | 'used';
-  link: string;
+  status: 'active' | 'expired' | 'used' | 'revoked';
+  link: string | null;
 };
 
 type InviteFilter = 'all' | InviteItem['status'];
@@ -80,6 +82,7 @@ export default function InvitesPage() {
       active: invites.filter((invite) => invite.status === 'active').length,
       used: invites.filter((invite) => invite.status === 'used').length,
       expired: invites.filter((invite) => invite.status === 'expired').length,
+      revoked: invites.filter((invite) => invite.status === 'revoked').length,
     }),
     [invites],
   );
@@ -89,6 +92,7 @@ export default function InvitesPage() {
     { id: 'active', label: isEn ? 'Active' : 'Активные', count: filterCounts.active },
     { id: 'used', label: isEn ? 'Used' : 'Использованные', count: filterCounts.used },
     { id: 'expired', label: isEn ? 'Expired' : 'Истекшие', count: filterCounts.expired },
+    { id: 'revoked', label: isEn ? 'Revoked' : 'Отозванные', count: filterCounts.revoked },
   ];
 
   const createInviteLink = async () => {
@@ -153,14 +157,22 @@ export default function InvitesPage() {
     setMessage('');
     try {
       await api(`/connections/invites/${inviteId}`, { method: 'DELETE' });
-      setInvites((prev) => prev.filter((invite) => invite.id !== inviteId));
-      setMessage(isEn ? 'Invite revoked.' : 'Приглашение удалено.');
+      await loadInvites();
+      setMessage(isEn ? 'Invite revoked.' : 'Приглашение отозвано.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : isEn ? 'Failed to revoke invite' : 'Не удалось удалить приглашение');
+      setMessage(err instanceof Error ? err.message : isEn ? 'Failed to revoke invite' : 'Не удалось отозвать приглашение');
     }
   };
 
   const copyInvite = async (invite: InviteItem) => {
+    if (!invite.link) {
+      setMessage(
+        isEn
+          ? 'This invite link was only shown once when created. Create a new link if needed.'
+          : 'Ссылка показывалась один раз при создании. При необходимости создайте новую.',
+      );
+      return;
+    }
     try {
       await navigator.clipboard?.writeText(invite.link);
       setCopyState(invite.id);
@@ -203,16 +215,18 @@ export default function InvitesPage() {
             </div>
 
             <div className="space-y-4">
-              <button
+              <Button
                 type="button"
                 onClick={() => void createInviteLink()}
                 disabled={creatingLink}
-                className="w-full rounded-[20px] bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-3.5 text-sm font-semibold text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                loading={creatingLink}
+                fullWidth
+                className="rounded-[20px] py-3.5 text-sm font-semibold shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)]"
               >
                 {creatingLink
                   ? isEn ? 'Creating link...' : 'Создаём ссылку...'
                   : isEn ? 'Create invite link' : 'Создать ссылку'}
-              </button>
+              </Button>
 
               <form autoComplete="off" onSubmit={createEmailInvite} className="app-soft-panel space-y-3 rounded-[20px] p-4">
                 <input type="text" name="fake-email" autoComplete="username" className="hidden" tabIndex={-1} />
@@ -224,15 +238,11 @@ export default function InvitesPage() {
                   autoComplete="off"
                   className="app-input rounded-2xl px-4 py-3 text-sm outline-none transition focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/20"
                 />
-                <button
-                  type="submit"
-                  disabled={sendingEmailInvite}
-                  className="app-secondary-button w-full rounded-2xl px-4 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-70"
-                >
+                <Button type="submit" variant="secondary" disabled={sendingEmailInvite} loading={sendingEmailInvite} fullWidth className="rounded-2xl py-3 text-sm font-medium">
                   {sendingEmailInvite
                     ? isEn ? 'Sending...' : 'Отправляем...'
                     : isEn ? 'Send invitation' : 'Отправить приглашение'}
-                </button>
+                </Button>
               </form>
 
               {message && <p className="text-sm text-slate-600 dark:text-slate-300">{message}</p>}
@@ -279,21 +289,24 @@ export default function InvitesPage() {
             {loading ? (
               <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">{isEn ? 'Loading invites...' : 'Загрузка приглашений...'}</p>
             ) : filteredInvites.length === 0 ? (
-              <div className="app-empty-state rounded-[20px] px-6 py-10 text-center">
-                <h3 className="text-lg font-semibold text-slate-950 dark:text-white">
-                  {filter === 'all'
-                    ? isEn ? 'No invites yet' : 'Приглашений пока нет'
-                    : isEn ? 'Nothing found for this filter' : 'Для этого фильтра ничего не найдено'}
-                </h3>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                  {filter === 'all'
-                    ? isEn
-                      ? 'Create your first invitation and it will appear here.'
-                      : 'Создайте первое приглашение, и оно появится здесь.'
-                    : isEn
-                      ? 'Try switching the filter to see other invitations.'
-                      : 'Попробуйте переключить фильтр, чтобы увидеть другие приглашения.'}
-                </p>
+              <div className="app-empty-state rounded-[20px]">
+                <EmptyState
+                  icon="🔗"
+                  title={
+                    filter === 'all'
+                      ? isEn ? 'No invites yet' : 'Приглашений пока нет'
+                      : isEn ? 'Nothing found' : 'Ничего не найдено'
+                  }
+                  description={
+                    filter === 'all'
+                      ? isEn
+                        ? 'Create your first invite link or send an invite by email.'
+                        : 'Создайте ссылку-приглашение или отправьте приглашение на email.'
+                      : isEn
+                        ? 'Try switching the filter to see other invitations.'
+                        : 'Попробуйте переключить фильтр, чтобы увидеть другие приглашения.'
+                  }
+                />
               </div>
             ) : (
               <div className="space-y-3">
@@ -304,7 +317,9 @@ export default function InvitesPage() {
                       ? isEn ? 'Active' : 'Активно'
                       : invite.status === 'used'
                         ? isEn ? 'Used' : 'Использовано'
-                        : isEn ? 'Expired' : 'Истекло';
+                        : invite.status === 'revoked'
+                          ? isEn ? 'Revoked' : 'Отозвано'
+                          : isEn ? 'Expired' : 'Истекло';
 
                   return (
                     <article
@@ -322,13 +337,15 @@ export default function InvitesPage() {
                                 ? 'bg-emerald-500/10 text-emerald-300'
                                 : invite.status === 'used'
                                   ? 'bg-blue-500/10 text-blue-300'
-                                  : 'bg-amber-500/10 text-amber-300'
+                                  : invite.status === 'revoked'
+                                    ? 'bg-slate-500/15 text-slate-300'
+                                    : 'bg-amber-500/10 text-amber-300'
                             }`}>
                               {statusLabel}
                             </span>
                           </div>
                           <div className="mt-2 break-all text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            {invite.link}
+                            {invite.link ?? (isEn ? 'Link was shown once at creation (not stored).' : 'Ссылка показывалась один раз при создании и не хранится в списке.')}
                           </div>
                         </div>
                       </div>
@@ -339,25 +356,24 @@ export default function InvitesPage() {
                       </div>
 
                       <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <button
+                        <Button
                           type="button"
+                          variant="secondary"
                           onClick={() => void copyInvite(invite)}
-                          className={`rounded-xl px-3 py-2 text-xs font-medium transition ${
-                            isCopied
-                              ? 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-300'
-                              : 'app-secondary-button'
-                          }`}
+                          disabled={!invite.link}
+                          className={`rounded-xl px-3 py-2 text-xs font-medium ${isCopied ? 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-300 border-emerald-500/20' : ''}`}
                         >
                           {isCopied ? (isEn ? 'Copied' : 'Скопировано') : (isEn ? 'Copy' : 'Копировать')}
-                        </button>
+                        </Button>
                         {invite.status === 'active' && (
-                          <button
+                          <Button
                             type="button"
+                            variant="danger"
                             onClick={() => void revokeInvite(invite.id)}
-                            className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300 transition hover:bg-rose-500/16"
+                            className="rounded-xl px-3 py-2 text-xs font-medium"
                           >
-                            {isEn ? 'Delete' : 'Удалить'}
-                          </button>
+                            {isEn ? 'Revoke' : 'Отозвать'}
+                          </Button>
                         )}
                       </div>
                     </article>

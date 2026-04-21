@@ -45,7 +45,7 @@ type SecurityPanelProps = {
 export function SecurityPanel({
   isVerified = false,
   twoFaEnabled = false,
-  passwordSubtitle = 'Not changed yet',
+  passwordSubtitle,
   sessionsCount = 1,
   onViewAll,
   onToggleTwoFactor,
@@ -53,6 +53,7 @@ export function SecurityPanel({
   onSessionsClick,
 }: SecurityPanelProps) {
   const { language } = useLanguage();
+  const pwdSub = passwordSubtitle ?? (language === 'en' ? 'Not changed yet' : 'Не изменён');
   return (
     <section id="security-section" className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
       <div className="flex items-center justify-between mb-4">
@@ -109,7 +110,7 @@ export function SecurityPanel({
               <IconKey />
               <div>
                 <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{language === 'en' ? 'Password' : 'Пароль'}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">{passwordSubtitle}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">{pwdSub}</div>
               </div>
             </div>
             <svg className="w-5 h-5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>

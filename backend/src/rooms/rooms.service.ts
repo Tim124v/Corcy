@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { hash, compare } from 'bcrypt';
+import { hashPassword, verifyPassword } from '../security/password.util.js';
+import { mapMessagesText, prepareMessageForApi, prepareMessageForStorage } from '../security/message-encryption.util.js';
 
 interface MembershipWithRoom {
   room: { id: string; name: string; ownerId: string; expiresAt: Date; owner: { id: string; email: string; name: string | null; avatarUrl: string | null } };
@@ -49,7 +50,7 @@ export class RoomsService {
   }
 
   async createRoom(userId: string, name: string, password: string) {
-    const passwordHash = await hash(password, 10);
+    const passwordHash = await hashPassword(password);
     const expiresAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
     const room = await this.prisma.room.create({
       data: {
@@ -71,7 +72,7 @@ export class RoomsService {
       include: { owner: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
     if (!room) throw new NotFoundException('Комната не найдена');
-    const ok = await compare(password, room.passwordHash);
+    const ok = await verifyPassword(password, room.passwordHash);
     if (!ok) throw new ForbiddenException('Неверный пароль комнаты');
     await this.prisma.roomMember.upsert({
       where: { roomId_userId: { roomId, userId } },
@@ -134,7 +135,8 @@ export class RoomsService {
       include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
       take: 200,
     });
-    return messages.map((m: RoomMessageWithSender) => ({
+    const decrypted = mapMessagesText(messages);
+    return decrypted.map((m: RoomMessageWithSender) => ({
       id: m.id,
       text: m.text,
       senderId: m.senderId,
@@ -158,11 +160,12 @@ export class RoomsService {
     const hasAttachment = !!attachment?.url;
     const textTrim = text?.trim() ?? '';
     if (!textTrim && !hasAttachment) throw new BadRequestException('Текст или вложение обязательны');
+    const storedText = textTrim ? prepareMessageForStorage(textTrim) : '';
     const message = await this.prisma.roomMessage.create({
       data: {
         roomId,
         senderId: userId,
-        text: textTrim,
+        text: storedText,
         attachmentUrl: attachment?.url ?? null,
         attachmentName: attachment?.name ?? null,
         attachmentType: attachment?.type ?? null,
@@ -171,7 +174,7 @@ export class RoomsService {
     });
     return {
       id: message.id,
-      text: message.text,
+      text: prepareMessageForApi(message.text),
       senderId: message.senderId,
       attachmentUrl: message.attachmentUrl ?? undefined,
       attachmentName: message.attachmentName ?? undefined,

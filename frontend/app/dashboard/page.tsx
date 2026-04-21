@@ -11,6 +11,9 @@ import { useTheme } from '../../components/theme-provider';
 import { useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
 import { useNotificationsStore } from '../../store/notifications';
 import { useChatActivityStore } from '../../store/chat-activity';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Button } from '../../components/ui/Button';
+import { MessageStatus } from '../../components/chat/MessageStatus';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -906,14 +909,16 @@ function DashboardInner() {
                       isInviteAccordionOpen ? 'translate-y-0' : '-translate-y-2'
                     }`}
                   >
-                  <button
+                  <Button
                     type="button"
                     disabled={creatingLink}
+                    loading={creatingLink}
                     onClick={createInviteLink}
-                    className="mb-3 w-full rounded-[18px] bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                    fullWidth
+                    className="mb-3 rounded-[18px] px-4 py-3 text-sm font-semibold"
                   >
                     {creatingLink ? (isEn ? 'Creating…' : 'Создаём…') : (isEn ? 'Create invite link' : 'Создать ссылку')}
-                  </button>
+                  </Button>
                   {error && <p className="mb-2 text-xs text-rose-300">{error}</p>}
                   {inviteLink && (
                       <div className={`mb-3 rounded-[18px] p-3 ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-100/80'}`}>
@@ -1120,8 +1125,9 @@ function DashboardInner() {
                                     </div>
                                   )}
                                   {m.text && <div className={`text-[15px] leading-[1.45] break-words ${rm.attachmentUrl ? 'mt-2' : ''}`}>{m.text}</div>}
-                                  <div className={`mt-1 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                                    {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                    <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    {isMine && <MessageStatus status="sent" className="text-white/80" />}
                                   </div>
                                 </div>
                                 {isMine && (
@@ -1209,8 +1215,9 @@ function DashboardInner() {
                                   </div>
                                 )}
                                 {m.text && <div className={`text-[15px] leading-[1.45] break-words ${(m as Message).attachmentUrl ? 'mt-2' : ''}`}>{m.text}</div>}
-                                <div className={`mt-1 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                                  {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                  <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  {isMine && <MessageStatus status="sent" className="text-white/80" />}
                                 </div>
                               </div>
                               {isMine && (
@@ -1328,12 +1335,9 @@ function DashboardInner() {
                       placeholder={isRoomChat ? (isEn ? 'Message to room...' : 'Сообщение в комнату...') : (isEn ? 'Message...' : 'Сообщение...')}
                     />
 
-                    <button
-                      type="submit"
-                      className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-6 text-sm font-semibold text-white transition hover:brightness-110"
-                    >
+                    <Button type="submit" className="h-12 rounded-full px-6 text-sm font-semibold">
                       {isEn ? 'Send' : 'Отправить'}
-                    </button>
+                    </Button>
                   </div>
                   <>
                     <input
@@ -1376,13 +1380,27 @@ function DashboardInner() {
                   ? 'bg-transparent shadow-none'
                   : 'bg-white/44 shadow-[0_18px_40px_-34px_rgba(148,163,184,0.18)]'
               }`}>
-                <div className="relative mb-8 flex h-28 w-28 items-center justify-center rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(111,102,255,0.22),rgba(61,71,155,0.22),rgba(10,17,45,0.08))]">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-[32px] tracking-[0.28em] text-slate-700 shadow-[0_10px_30px_-18px_rgba(255,255,255,0.75)]">...</div>
+                <div className="app-empty-state w-full rounded-[24px]">
+                  <EmptyState
+                    icon="💬"
+                    title={isEn ? 'Select a conversation' : 'Выберите диалог'}
+                    description={
+                      isEn
+                        ? 'Open contacts or rooms to start messaging.'
+                        : 'Откройте контакты или комнаты, чтобы начать переписку.'
+                    }
+                    action={
+                      <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+                        <Button type="button" onClick={() => router.push('/contacts')} className="rounded-full px-8">
+                          {isEn ? 'Contacts' : 'Контакты'}
+                        </Button>
+                        <Button type="button" variant="secondary" onClick={() => router.push('/rooms')} className="rounded-full px-8">
+                          {isEn ? 'Rooms' : 'Комнаты'}
+                        </Button>
+                      </div>
+                    }
+                  />
                 </div>
-                <h3 className="text-[38px] font-semibold tracking-tight text-slate-900 dark:text-white">{isEn ? 'Select a conversation' : 'Выберите диалог'}</h3>
-                <p className="mt-5 max-w-[300px] text-[17px] leading-8 text-slate-600 dark:text-slate-300/70">
-                  {isEn ? 'Choose a contact or room from the list to start messaging.' : 'Выберите контакт или комнату в списке, чтобы начать переписку.'}
-                </p>
               </div>
             </div>
           )}

@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../../store/auth';
 import { api } from '../../lib/api';
 import { useLanguage } from '../../components/language-provider';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Button } from '../../components/ui/Button';
+import { Avatar } from '../../components/ui/Avatar';
 
 type Connection = {
   id: string;
@@ -195,13 +198,15 @@ export default function ContactsPage() {
                     autoCorrect="off"
                     autoCapitalize="none"
                   />
-                  <button
+                  <Button
                     type="submit"
                     disabled={adding || !addUserId.trim()}
-                    className="shrink-0 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
+                    loading={adding}
+                    size="sm"
+                    className="rounded-full px-4 py-2 text-xs font-semibold"
                   >
                     {adding ? (isEn ? 'Adding...' : 'Добавляем...') : (isEn ? 'Add' : 'Добавить')}
-                  </button>
+                  </Button>
                 </div>
                 {addMessage && (
                   <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">{addMessage}</div>
@@ -270,15 +275,25 @@ export default function ContactsPage() {
           {loading ? (
             <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">{isEn ? 'Loading contacts...' : 'Загрузка контактов...'}</p>
           ) : filteredConnections.length === 0 ? (
-            <div className="app-empty-state rounded-[24px] px-6 py-10 text-center">
-              <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-                {isEn ? 'No contacts yet' : 'Контактов пока нет'}
-              </h2>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                {isEn
-                  ? 'Invite someone from the chats page and they will appear here.'
-                  : 'Пригласите кого-нибудь со страницы чатов, и контакт появится здесь.'}
-              </p>
+            <div className="app-empty-state rounded-[24px]">
+              <EmptyState
+                icon="👥"
+                title={isEn ? 'No contacts yet' : 'Контактов пока нет'}
+                description={
+                  isEn
+                    ? 'Create an invite link or send an invite by email to add someone.'
+                    : 'Создайте ссылку-приглашение или отправьте приглашение на email — и контакт появится здесь.'
+                }
+                action={
+                  <Button
+                    type="button"
+                    onClick={() => router.push('/invites')}
+                    className="rounded-full px-8"
+                  >
+                    {isEn ? 'Go to invites' : 'Перейти к приглашениям'}
+                  </Button>
+                }
+              />
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -288,18 +303,12 @@ export default function ContactsPage() {
                   className="app-soft-panel rounded-[22px] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-[0_18px_38px_-28px_rgba(59,130,246,0.32)]"
                 >
                   <div className="flex items-center gap-3">
-                    {connection.user.avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={connection.user.avatarUrl}
-                        alt={connection.user.name || connection.user.email}
-                        className="h-12 w-12 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-semibold text-white">
-                        {initials(connection.user.name, connection.user.email)}
-                      </div>
-                    )}
+                    <Avatar
+                      name={connection.user.name || connection.user.email}
+                      src={connection.user.avatarUrl ?? null}
+                      size="lg"
+                      className="w-12 h-12"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[15px] font-semibold text-slate-950 dark:text-white">
                         {connection.user.name || connection.user.email}
@@ -362,21 +371,18 @@ export default function ContactsPage() {
             </div>
 
             <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(null)}
-                className="app-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium transition"
-              >
+              <Button type="button" variant="secondary" onClick={() => setConfirmDelete(null)}>
                 {isEn ? 'Cancel' : 'Отменить'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="danger"
                 disabled={deletingId === confirmDelete.id}
                 onClick={() => void removeConnection(confirmDelete.id).finally(() => setConfirmDelete(null))}
-                className="rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
+                className="px-4 py-2.5 text-sm font-semibold"
               >
                 {deletingId === confirmDelete.id ? (isEn ? 'Removing...' : 'Удаляем...') : (isEn ? 'Remove' : 'Удалить')}
-              </button>
+              </Button>
             </div>
           </section>
         </div>

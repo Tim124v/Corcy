@@ -2,6 +2,15 @@ import { Controller, Get, Post, Body, UseGuards, Delete, Param } from '@nestjs/c
 import { ConnectionsService } from './connections.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { ReqUser } from '../auth/req-user.decorator.js';
+import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import {
+  CreateInviteSchema,
+  CreateInviteDto,
+  InviteEmailSchema,
+  InviteEmailDto,
+  UseInviteSchema,
+  UseInviteDto,
+} from '../auth/auth.schemas.js';
 
 @Controller('connections')
 @UseGuards(JwtAuthGuard)
@@ -24,17 +33,26 @@ export class ConnectionsController {
   }
 
   @Post('invite-link')
-  async createInviteLink(@ReqUser() user: { id: string }) {
-    return this.connections.createInviteLink(user.id);
+  async createInviteLink(
+    @ReqUser() user: { id: string },
+    @Body(new ZodValidationPipe(CreateInviteSchema)) body: CreateInviteDto,
+  ) {
+    return this.connections.createInviteLink(user.id, body);
   }
 
   @Post('invite')
-  async invite(@ReqUser() user: { id: string }, @Body() body: { email: string }) {
-    return this.connections.invite(user.id, body.email || '');
+  async invite(
+    @ReqUser() user: { id: string },
+    @Body(new ZodValidationPipe(InviteEmailSchema)) body: InviteEmailDto,
+  ) {
+    return this.connections.invite(user.id, body.email, body);
   }
 
   @Post('accept')
-  async accept(@ReqUser() user: { id: string }, @Body() body: { token: string }) {
+  async accept(
+    @ReqUser() user: { id: string },
+    @Body(new ZodValidationPipe(UseInviteSchema)) body: UseInviteDto,
+  ) {
     return this.connections.acceptInvite(body.token, user.id);
   }
 

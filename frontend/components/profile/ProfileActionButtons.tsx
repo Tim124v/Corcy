@@ -1,5 +1,7 @@
 'use client';
 
+import { Button } from '../ui/Button';
+
 type ProfileActionButtonsProps = {
   onEdit?: () => void;
   onMessage?: () => void;
@@ -16,29 +18,18 @@ export function ProfileActionButtons({
   return (
     <div className={`flex flex-wrap gap-2 ${className}`}>
       {isCurrentUser && onEdit && (
-        <button
-          type="button"
-          onClick={onEdit}
-          className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition"
-        >
+        <Button type="button" onClick={onEdit}>
           Редактировать профиль
-        </button>
+        </Button>
       )}
       {!isCurrentUser && onMessage && (
-        <button
-          type="button"
-          onClick={onMessage}
-          className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition"
-        >
+        <Button type="button" onClick={onMessage}>
           Написать
-        </button>
+        </Button>
       )}
-      <button
-        type="button"
-        className="rounded-xl border border-white/20 dark:border-slate-600 bg-white/10 dark:bg-slate-700/50 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-white/20 dark:hover:bg-slate-600/50 transition"
-      >
+      <Button type="button" variant="secondary">
         Ещё
-      </button>
+      </Button>
     </div>
   );
 }

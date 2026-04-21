@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { useLanguage } from '../language-provider';
+import { SecureInput } from '../ui/SecureInput';
+import { EmptyState } from '../ui/EmptyState';
+import { Button } from '../ui/Button';
 
 type Room = {
   id: string;
@@ -36,6 +39,7 @@ export function RoomsPanel({
   onLeaveRoom,
 }: RoomsPanelProps) {
   const { language } = useLanguage();
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedInviteRoom, setSelectedInviteRoom] = useState<Room | null>(null);
   const [copiedInviteRoomId, setCopiedInviteRoomId] = useState<string | null>(null);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -79,16 +83,23 @@ export function RoomsPanel({
     <section className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <h2 className="text-lg font-semibold text-slate-950 dark:text-white">{language === 'en' ? 'My Rooms' : 'Мои комнаты'}</h2>
-        <button
-          type="submit"
-          form="create-room-form"
-          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110 shrink-0"
+        <Button
+          type="button"
+          onClick={() => setShowCreateForm((v) => !v)}
+          className="shrink-0"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          {language === 'en' ? 'Create Room' : 'Создать комнату'}
-        </button>
+          {showCreateForm
+            ? language === 'en'
+              ? 'Hide form'
+              : 'Скрыть форму'
+            : language === 'en'
+              ? 'Create room'
+              : 'Создать комнату'}
+        </Button>
       </div>
 
+      {showCreateForm && (
       <form id="create-room-form" autoComplete="off" onSubmit={onSubmitCreate} className="app-soft-panel mb-6 grid gap-3 rounded-2xl p-4 sm:grid-cols-2">
         <input type="text" name="fake-email" autoComplete="username" className="hidden" tabIndex={-1} />
         <input type="password" name="fake-password" autoComplete="new-password" className="hidden" tabIndex={-1} />
@@ -105,31 +116,38 @@ export function RoomsPanel({
         </div>
         <div className="sm:col-span-1">
           <label className="block text-xs font-medium text-slate-400 mb-1">{language === 'en' ? 'Room password' : 'Пароль комнаты'}</label>
-          <input
-            type="password"
+          <SecureInput
             name="room-password"
             autoComplete="new-password"
-            className="app-input w-full rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+            className="app-input w-full rounded-xl pr-[4.5rem] px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
             value={roomPass}
-            onChange={(e) => setRoomPass(e.target.value)}
+            onChange={setRoomPass}
             placeholder={language === 'en' ? 'Create password' : 'Придумайте пароль'}
             required
           />
         </div>
         <div className="sm:col-span-2 flex items-center gap-2">
-          <button
-            type="submit"
-            className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110"
-          >
+          <Button type="submit">
             {language === 'en' ? 'Create' : 'Создать'}
-          </button>
+          </Button>
           {roomMsg && <span className="text-sm text-slate-600 dark:text-slate-300">{roomMsg}</span>}
         </div>
       </form>
+      )}
 
       <ul className="space-y-2">
         {rooms.length === 0 && (
-          <li className="app-empty-state rounded-xl py-6 text-center text-sm text-slate-500 dark:text-slate-400">{language === 'en' ? 'No rooms yet.' : 'Пока нет комнат.'}</li>
+          <li className="app-empty-state rounded-xl">
+            <EmptyState
+              icon="🏠"
+              title={language === 'en' ? 'No rooms yet' : 'Пока нет комнат'}
+              description={
+                language === 'en'
+                  ? 'Create a room and invite participants to start chatting.'
+                  : 'Создайте комнату и пригласите участников, чтобы начать общение.'
+              }
+            />
+          </li>
         )}
         {rooms.map((r, i) => (
           <li
@@ -144,15 +162,17 @@ export function RoomsPanel({
                 <span>{language === 'en' ? 'Activity: —' : 'Активность: —'}</span>
               </div>
             </div>
-            <button
+            <Button
               type="button"
-              className="app-secondary-button shrink-0 rounded-xl px-3 py-1.5 text-xs font-medium transition"
+              variant="secondary"
+              size="sm"
+              className="shrink-0 rounded-xl px-3 py-1.5 text-xs font-medium"
               onClick={() => navigator.clipboard?.writeText(r.id)}
               title={language === 'en' ? 'Copy room code' : 'Скопировать код комнаты'}
               aria-label={language === 'en' ? 'Copy room code' : 'Скопировать код комнаты'}
             >
               {language === 'en' ? 'Code' : 'Код'}
-            </button>
+            </Button>
             <button
               type="button"
               className={`shrink-0 rounded-xl border px-3 py-1.5 text-xs font-medium transition ${
@@ -214,16 +234,17 @@ export function RoomsPanel({
                 </p>
                 <h3 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{selectedInviteRoom.name}</h3>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => {
                   setSelectedInviteRoom(null);
                   setCopiedInviteRoomId(null);
                 }}
-                className="app-secondary-button rounded-full px-3 py-1.5 text-sm transition"
+                className="rounded-full px-3 py-1.5 text-sm"
               >
                 {language === 'en' ? 'Close' : 'Закрыть'}
-              </button>
+              </Button>
             </div>
 
             <div className="space-y-4">
@@ -256,13 +277,11 @@ export function RoomsPanel({
               </div>
 
               <div className="flex items-center gap-3">
-                <button
+                <Button
                   type="button"
                   onClick={() => void copyRoomInvite(selectedInviteRoom)}
-                  className={`rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                    copiedInviteRoomId === selectedInviteRoom.id
-                      ? 'bg-emerald-500/12 text-emerald-300'
-                      : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] hover:brightness-110'
+                  className={`px-4 py-2.5 text-sm font-medium ${
+                    copiedInviteRoomId === selectedInviteRoom.id ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/20' : ''
                   }`}
                 >
                   {copiedInviteRoomId === selectedInviteRoom.id
@@ -272,23 +291,25 @@ export function RoomsPanel({
                     : language === 'en'
                       ? 'Copy invitation'
                       : 'Скопировать приглашение'}
-                </button>
+                </Button>
                 {canShare && (
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={() => void shareRoomInvite(selectedInviteRoom)}
-                    className="app-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium transition"
+                    className="rounded-xl px-4 py-2.5 text-sm font-medium"
                   >
                     {language === 'en' ? 'Share' : 'Поделиться'}
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => navigator.clipboard?.writeText(selectedInviteRoom.id)}
-                  className="app-secondary-button rounded-xl px-4 py-2.5 text-sm font-medium transition"
+                  className="rounded-xl px-4 py-2.5 text-sm font-medium"
                 >
                   {language === 'en' ? 'Copy code only' : 'Скопировать только код'}
-                </button>
+                </Button>
               </div>
             </div>
           </section>

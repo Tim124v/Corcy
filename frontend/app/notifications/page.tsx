@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { Bell, CheckCheck, Shield, Users, Trash2 } from 'lucide-react';
 import { useLanguage } from '../../components/language-provider';
 import { useNotificationsStore } from '../../store/notifications';
+import { Button } from '../../components/ui/Button';
 
 const formatTime = (date: string, language: 'ru' | 'en') =>
   new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'ru-RU', {
@@ -62,14 +63,10 @@ export default function NotificationsPage() {
           </div>
 
           {items.length > 0 && (
-            <button
-              type="button"
-              onClick={clearAll}
-              className="app-secondary-button inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition"
-            >
+            <Button type="button" variant="secondary" onClick={clearAll} className="rounded-2xl px-4 py-3 text-sm font-medium">
               <Trash2 className="h-4 w-4" />
               {isEn ? 'Clear all' : 'Очистить всё'}
-            </button>
+            </Button>
           )}
         </header>
 

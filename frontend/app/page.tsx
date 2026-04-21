@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../store/auth';
+import { Button } from '../components/ui/Button';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -41,17 +42,13 @@ export default function LandingPage() {
           <br />
           Комнаты и чат только для людей, которых вы выбрали.
         </p>
-        <button
+        <Button
           type="button"
           onClick={() => router.push('/auth/register')}
-          className="landing-button mt-1 rounded-full px-12 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 active:translate-y-0"
-          style={{
-            background: 'linear-gradient(to right, #3b82f6, #6366f1, #8b5cf6)',
-            boxShadow: '0 18px 45px rgba(56,189,248,0.35)',
-          }}
+          className="landing-button mt-1 rounded-full px-12 py-3 text-sm font-semibold"
         >
-          Get started
-        </button>
+          Начать
+        </Button>
       </div>
     </main>
   );

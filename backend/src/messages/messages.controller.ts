@@ -10,22 +10,35 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
-  Req,
 } from '@nestjs/common';
 import { MessagesService } from './messages.service.js';
+import { UploadService } from './upload.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { ReqUser } from '../auth/req-user.decorator.js';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { randomUUID } from 'crypto';
-import { existsSync, mkdirSync } from 'fs';
-import type { Request } from 'express';
+import { memoryStorage } from 'multer';
+
+const ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'text/plain',
+  'application/zip',
+  'video/mp4',
+  'video/webm',
+  'audio/mpeg',
+  'audio/ogg',
+]);
 
 @Controller('messages')
 @UseGuards(JwtAuthGuard)
 export class MessagesController {
-  constructor(private readonly messages: MessagesService) {}
+  constructor(
+    private readonly messages: MessagesService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   @Get()
   async getThread(@ReqUser() user: { id: string }, @Query('with') peerId: string) {
@@ -48,23 +61,16 @@ export class MessagesController {
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
-          const dir = join(process.cwd(), 'uploads');
-          if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-          cb(null, dir);
-        },
-        filename: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-          const ext = extname(file.originalname);
-          cb(null, `${randomUUID()}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
+      fileFilter: (_req, file, cb) => {
+        if (ALLOWED_MIME_TYPES.has(file.mimetype)) return cb(null, true);
+        return cb(new BadRequestException(`Тип файла ${file.mimetype} не разрешён`) as unknown as Error, false);
+      },
       limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     }),
   )
-  async upload(@UploadedFile() file: Express.Multer.File, @Req() req: Request) {
+  async upload(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('file is required');
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    return { url: `${baseUrl}/uploads/${file.filename}`, originalName: file.originalname, mimeType: file.mimetype };
+    return this.uploadService.upload(file.buffer, file.originalname, file.mimetype);
   }
 }

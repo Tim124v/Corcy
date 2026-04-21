@@ -7,6 +7,7 @@ import { api } from '../../../lib/api';
 import { sanitizeRedirect } from '../../../lib/sanitize-redirect';
 import { useAuthStore } from '../../../store/auth';
 import { SplineScene } from '../../../components/ui/splite';
+import { Button } from '../../../components/ui/Button';
 
 function VerifyEmailPageInner() {
   const router = useRouter();
@@ -112,7 +113,7 @@ function VerifyEmailPageInner() {
             </div>
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-blue-200/80">Connexy</p>
-              <h1 className="text-lg font-semibold text-slate-50">Private connections, refined</h1>
+              <h1 className="text-lg font-semibold text-slate-50">Приватное общение</h1>
             </div>
           </div>
         </header>
@@ -133,18 +134,18 @@ function VerifyEmailPageInner() {
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
                 ✉️ Подтверждение
               </span>
-              <h2 className="text-3xl font-semibold leading-tight text-white">Confirm your email</h2>
+              <h2 className="text-3xl font-semibold leading-tight text-white">Подтвердите email</h2>
               <p className="text-sm text-slate-400">
-                Enter the 6-digit code sent to your email.
+                Введите 6-значный код, который мы отправили на вашу почту.
               </p>
               {emailFromQuery && (
-                <p className="text-xs text-slate-500 truncate">Sent to: {emailFromQuery}</p>
+                <p className="text-xs text-slate-500 truncate">Отправлено на: {emailFromQuery}</p>
               )}
             </div>
 
             <form onSubmit={submit} className="mt-6 space-y-4">
               <div className="space-y-1.5">
-                <label className="text-sm text-slate-200">Verification code</label>
+                <label className="text-sm text-slate-200">Код подтверждения</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -158,13 +159,15 @@ function VerifyEmailPageInner() {
               </div>
               {info && <p className="text-sm text-green-300">{info}</p>}
               {error && <p className="text-sm text-red-400">{error}</p>}
-              <button
+              <Button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:translate-y-[-1px] hover:shadow-xl hover:shadow-blue-500/40 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
+                loading={loading}
+                fullWidth
+                className="rounded-xl px-4 py-3 text-sm font-semibold shadow-lg shadow-blue-500/30"
               >
-                {loading ? 'Проверяем...' : 'Verify'}
-              </button>
+                {loading ? 'Проверяем...' : 'Подтвердить'}
+              </Button>
             </form>
 
             <p className="mt-6 text-sm text-slate-400">

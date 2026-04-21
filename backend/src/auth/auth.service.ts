@@ -1,47 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { hash, compare } from 'bcrypt';
+import { setRefreshCookie } from './cookie.util.js';
+import { TempToken } from './temp-token.util.js';
 import { createTransport } from 'nodemailer';
 import { randomInt } from 'crypto';
+import { hashPassword, verifyPassword } from '../security/password.util.js';
+import { TokenRefreshService } from '../security/token-refresh.service.js';
+import { AuditLogService } from '../security/audit-log.service.js';
+import { checkRateLimit, clearRateLimit, incrementRateLimit } from './rate-limit.util.js';
 
 const VERIFICATION_CODE_EXPIRY_MINUTES = 10;
-const MAX_VERIFY_ATTEMPTS = 5;
-const VERIFY_ATTEMPTS_WINDOW_MS = 10 * 60 * 1000; // 10 min
-
-// In-memory rate limit: email -> { count, since }
-const verifyAttempts = new Map<string, { count: number; since: number }>();
-
-function checkVerifyRateLimit(email: string): boolean {
-  const key = email.toLowerCase().trim();
-  const now = Date.now();
-  const entry = verifyAttempts.get(key);
-  if (!entry) return true;
-  if (now - entry.since > VERIFY_ATTEMPTS_WINDOW_MS) {
-    verifyAttempts.delete(key);
-    return true;
-  }
-  return entry.count < MAX_VERIFY_ATTEMPTS;
-}
-
-function incrementVerifyAttempts(email: string): void {
-  const key = email.toLowerCase().trim();
-  const now = Date.now();
-  const entry = verifyAttempts.get(key);
-  if (!entry) {
-    verifyAttempts.set(key, { count: 1, since: now });
-    return;
-  }
-  if (now - entry.since > VERIFY_ATTEMPTS_WINDOW_MS) {
-    verifyAttempts.set(key, { count: 1, since: now });
-    return;
-  }
-  entry.count += 1;
-}
-
-function clearVerifyAttempts(email: string): void {
-  verifyAttempts.delete(email.toLowerCase().trim());
-}
 
 function generateSixDigitCode(): string {
   return String(randomInt(100000, 1000000));
@@ -81,11 +50,14 @@ function sendVerificationEmail(to: string, code: string): Promise<void> {
     });
 }
 
+export type AuthClientMeta = { ipAddress?: string; userAgent?: string };
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
+    private readonly tokens: TokenRefreshService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async register(
@@ -106,9 +78,7 @@ export class AuthService {
       if (existingByUsername) return { ok: false, error: 'Username already taken' };
     }
 
-    if (password.length < 8) return { ok: false, error: 'Password must be at least 8 characters' };
-
-    const passwordHash = await hash(password, 10);
+    const passwordHash = await hashPassword(password);
     const user = await this.prisma.user.create({
       data: {
         email: emailNorm,
@@ -136,20 +106,57 @@ export class AuthService {
     };
   }
 
-  async verifyEmail(email: string, code: string) {
+  async issueFullTokens(
+    userId: string,
+    meta: AuthClientMeta | undefined,
+    res: Response,
+  ): Promise<{
+    ok: true;
+    user: { id: string; email: string; name: string | null; avatarUrl: string | null };
+    accessToken: string;
+  }> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, avatarUrl: true },
+    });
+    if (!u) throw new Error('User not found after auth');
+    const pair = await this.tokens.issuePair(u.id, u.email, {
+      ipAddress: meta?.ipAddress,
+      userAgent: meta?.userAgent,
+    });
+    setRefreshCookie(res, pair.refreshToken);
+    return {
+      ok: true,
+      user: { id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl },
+      accessToken: pair.accessToken,
+    };
+  }
+
+  async verifyEmail(email: string, code: string, meta: AuthClientMeta | undefined, res: Response) {
     const emailNorm = email.toLowerCase().trim();
     const codeSanitized = String(code).replace(/\D/g, '').slice(0, 6);
     if (codeSanitized.length !== 6) {
       return { ok: false, error: 'Invalid verification code' };
     }
 
-    if (!checkVerifyRateLimit(emailNorm)) {
+    const WINDOW_MS = 10 * 60 * 1000; // 10 минут
+    const MAX_ATTEMPTS = 5;
+    const rlKey = `verify:${emailNorm}`;
+
+    const rl = await checkRateLimit(this.prisma, {
+      key: rlKey,
+      maxAttempts: MAX_ATTEMPTS,
+      windowMs: WINDOW_MS,
+    });
+
+    if (!rl.allowed) {
       return { ok: false, error: 'Too many attempts. Try again in 10 minutes.' };
     }
 
     const user = await this.prisma.user.findUnique({ where: { email: emailNorm } });
     if (!user) {
-      incrementVerifyAttempts(emailNorm);
+      // Инкрементируем даже для несуществующих email (защита от enumeration)
+      await incrementRateLimit(this.prisma, { key: rlKey, windowMs: WINDOW_MS });
       return { ok: false, error: 'Invalid verification code' };
     }
 
@@ -158,11 +165,11 @@ export class AuthService {
       orderBy: { createdAt: 'desc' },
     });
     if (!verification) {
-      incrementVerifyAttempts(emailNorm);
+      await incrementRateLimit(this.prisma, { key: rlKey, windowMs: WINDOW_MS });
       return { ok: false, error: 'Invalid verification code' };
     }
     if (verification.expiresAt < new Date()) {
-      incrementVerifyAttempts(emailNorm);
+      await incrementRateLimit(this.prisma, { key: rlKey, windowMs: WINDOW_MS });
       return { ok: false, error: 'Code expired' };
     }
 
@@ -173,21 +180,23 @@ export class AuthService {
       }),
       this.prisma.emailVerification.delete({ where: { id: verification.id } }),
     ]);
-    clearVerifyAttempts(emailNorm);
+    await clearRateLimit(this.prisma, rlKey);
 
-    const accessToken = this.jwt.sign({ sub: user.id, email: user.email });
-    return {
-      ok: true,
-      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },
-      accessToken,
-    };
+    const out = await this.issueFullTokens(user.id, meta, res);
+    await this.audit.log({
+      userId: user.id,
+      action: 'EMAIL_VERIFIED',
+      ipAddress: meta?.ipAddress,
+      userAgent: meta?.userAgent,
+      severity: 'LOW',
+    });
+    return out;
   }
 
   async resendVerification(email: string) {
     const emailNorm = email.toLowerCase().trim();
     const user = await this.prisma.user.findUnique({ where: { email: emailNorm } });
 
-    // Не раскрываем, существует ли email (анти user-enumeration)
     if (!user) return { ok: true };
     if (user.isVerified) return { ok: true };
 
@@ -203,18 +212,45 @@ export class AuthService {
     return { ok: true };
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, meta: AuthClientMeta | undefined, res: Response) {
     const emailNorm = email.toLowerCase().trim();
-    const user = await this.prisma.user.findUnique({ where: { email: emailNorm } });
-    if (!user || !(await compare(password, user.passwordHash)))
+    const user = await this.prisma.user.findUnique({
+      where: { email: emailNorm },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        passwordHash: true,
+        isVerified: true,
+        totpEnabled: true,
+      },
+    });
+    if (!user || !(await verifyPassword(password, user.passwordHash)))
       return { ok: false, error: 'Invalid email or password' };
     if (!user.isVerified)
       return { ok: false, error: 'Please verify your email first. Check the code we sent you.' };
-    const accessToken = this.jwt.sign({ sub: user.id, email: user.email });
-    return {
-      ok: true,
-      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },
-      accessToken,
-    };
+
+    if (user.totpEnabled) {
+      const tempToken = TempToken.sign(user.id);
+      await this.audit.log({
+        userId: user.id,
+        action: 'LOGIN_2FA_REQUIRED',
+        ipAddress: meta?.ipAddress,
+        userAgent: meta?.userAgent,
+        severity: 'LOW',
+      });
+      return { ok: true, requiresTwoFactor: true, tempToken };
+    }
+
+    const out = await this.issueFullTokens(user.id, meta, res);
+    await this.audit.log({
+      userId: user.id,
+      action: 'USER_LOGIN',
+      ipAddress: meta?.ipAddress,
+      userAgent: meta?.userAgent,
+      severity: 'LOW',
+    });
+    return out;
   }
 }

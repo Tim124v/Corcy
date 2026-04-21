@@ -8,8 +8,11 @@ import { api } from '../../lib/api';
 import { useTheme } from '../../components/theme-provider';
 import { useLanguage } from '../../components/language-provider';
 import { SecurityPanel } from '../../components/profile/SecurityPanel';
+import { SecurityLog } from '../../components/security/SecurityLog';
 import { AppearancePanel } from '../../components/profile/AppearancePanel';
 import { useNotificationsStore, type NotificationType } from '../../store/notifications';
+import { SecureInput } from '../../components/ui/SecureInput';
+import { Button } from '../../components/ui/Button';
 
 type UserProfile = {
   name: string | null;
@@ -40,11 +43,15 @@ export default function SettingsPage() {
   const [isSessionsModalOpen, setIsSessionsModalOpen] = useState(false);
 
   const passwordSubtitle = useMemo(() => {
-    if (typeof window === 'undefined' || !user) return 'Not changed yet';
+    if (typeof window === 'undefined' || !user) {
+      return language === 'en' ? 'Not changed yet' : 'Не изменён';
+    }
     const stored = localStorage.getItem(`connexy-password-changed-at:${user.id}`);
-    if (!stored) return 'Not changed yet';
-    return `Last changed ${new Date(stored).toLocaleDateString('ru-RU')}`;
-  }, [user, passwordSaving]);
+    if (!stored) return language === 'en' ? 'Not changed yet' : 'Не изменён';
+    return language === 'en'
+      ? `Last changed ${new Date(stored).toLocaleDateString('en-US')}`
+      : `Изменён ${new Date(stored).toLocaleDateString('ru-RU')}`;
+  }, [user, passwordSaving, language]);
 
   const loadSettingsData = async () => {
     if (!accessToken) return;
@@ -143,6 +150,13 @@ export default function SettingsPage() {
             />
           </div>
 
+          <section className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
+            <h2 className="mb-3 text-lg font-semibold text-slate-950 dark:text-white">
+              {language === 'en' ? 'Activity history' : 'История активности'}
+            </h2>
+            <SecurityLog />
+          </section>
+
           <div id="appearance-card">
             <AppearancePanel
               theme={theme}
@@ -176,46 +190,35 @@ export default function SettingsPage() {
               </button>
             </div>
             <form onSubmit={changePassword} className="space-y-4">
-              <input
-                type="password"
+              <SecureInput
                 autoComplete="current-password"
                 value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
+                onChange={setCurrentPassword}
                 placeholder={language === 'en' ? 'Current password' : 'Текущий пароль'}
-                className="w-full rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500"
+                className="w-full rounded-xl border border-slate-200 bg-white/80 pr-[4.5rem] px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500"
               />
-              <input
-                type="password"
+              <SecureInput
                 autoComplete="new-password"
                 value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+                onChange={setNewPassword}
                 placeholder={language === 'en' ? 'New password' : 'Новый пароль'}
-                className="w-full rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500"
+                className="w-full rounded-xl border border-slate-200 bg-white/80 pr-[4.5rem] px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500"
               />
-              <input
-                type="password"
+              <SecureInput
                 autoComplete="new-password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={setConfirmPassword}
                 placeholder={language === 'en' ? 'Repeat new password' : 'Повторите новый пароль'}
-                className="w-full rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500"
+                className="w-full rounded-xl border border-slate-200 bg-white/80 pr-[4.5rem] px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500"
               />
               {passwordMessage && <p className="text-sm text-slate-600 dark:text-slate-300">{passwordMessage}</p>}
               <div className="flex items-center gap-3">
-                <button
-                  type="submit"
-                  disabled={passwordSaving}
-                  className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110 disabled:opacity-50"
-                >
+                <Button type="submit" disabled={passwordSaving} loading={passwordSaving}>
                   {passwordSaving ? (language === 'en' ? 'Saving...' : 'Сохраняем...') : (language === 'en' ? 'Update password' : 'Обновить пароль')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsPasswordModalOpen(false)}
-                  className="rounded-xl bg-slate-900/5 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-900/10 hover:text-slate-950 dark:bg-white/[0.05] dark:text-slate-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
-                >
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setIsPasswordModalOpen(false)}>
                   {language === 'en' ? 'Cancel' : 'Отмена'}
-                </button>
+                </Button>
               </div>
             </form>
           </section>

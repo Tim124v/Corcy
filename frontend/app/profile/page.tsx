@@ -11,6 +11,8 @@ import { ProfileHeader } from '../../components/profile/ProfileHeader';
 import { AccountStatusCard } from '../../components/profile/AccountStatusCard';
 import { StatisticsPanel } from '../../components/profile/StatisticsPanel';
 import { setStoredUserAvatar, useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
+import { EditProfilePanel } from '../../components/profile/EditProfilePanel';
+import { Button } from '../../components/ui/Button';
 
 const initials = (name?: string | null, email?: string) => {
   if (name && name.trim()) {
@@ -66,6 +68,7 @@ export default function ProfilePage() {
   const [messagesCount, setMessagesCount] = useState(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [accountStatus, setAccountStatus] = useState<'online' | 'offline' | 'connected'>('online');
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
   /** Локальный черновик: data URL (новое фото), 'remove' (удалить), null (без изменений) */
   const [avatarDraft, setAvatarDraft] = useState<string | null | 'remove'>(null);
   const profilePhoto = useCurrentUserAvatar(user?.id, user?.avatarUrl);
@@ -198,7 +201,7 @@ export default function ProfilePage() {
               roomsCreated={rooms.length}
               members={participantsCount}
               messagesSent={messagesCount}
-              onEditProfile={() => document.getElementById('profile-edit-card')?.scrollIntoView({ behavior: 'smooth' })}
+              onEditProfile={() => setShowProfileEdit(true)}
               onSettingsClick={() => router.push('/settings')}
               onShareClick={() => navigator.clipboard?.writeText(typeof window !== 'undefined' ? `${window.location.origin}/profile` : '')}
             />
@@ -224,7 +227,7 @@ export default function ProfilePage() {
               <h2 className="mb-4 text-lg font-semibold text-slate-950 dark:text-white">{language === 'en' ? 'Account Overview' : 'Обзор аккаунта'}</h2>
               <div className="space-y-3">
                 <div className="app-shell-muted rounded-xl px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Account</div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Аккаунт</div>
                   <div className="mt-2 text-sm text-slate-800 dark:text-slate-200">{user.email}</div>
                   <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                     {userProfile?.createdAt
@@ -232,99 +235,50 @@ export default function ProfilePage() {
                         ? `Joined ${new Date(userProfile.createdAt).toLocaleDateString('en-US')}`
                         : `С нами с ${new Date(userProfile.createdAt).toLocaleDateString('ru-RU')}`
                       : language === 'en'
-                      ? 'Account information'
+                      ? 'Информация аккаунта'
                       : 'Информация аккаунта'}
                   </div>
                 </div>
-                <Link
-                  href="/settings"
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110"
-                >
-                  {language === 'en' ? 'Open settings' : 'Открыть настройки'}
+                <Link href="/settings">
+                  <Button type="button">
+                    {language === 'en' ? 'Open settings' : 'Открыть настройки'}
+                  </Button>
                 </Link>
               </div>
             </section>
 
             <div className="space-y-6">
-            <section id="profile-edit-card" className="app-shell-card rounded-[24px] p-6">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Edit Profile</h2>
+              <div className="flex justify-end">
                 <button
-                  onClick={() => logout()}
-                  className="text-sm font-medium text-rose-300 transition hover:text-rose-200"
+                  type="button"
+                  onClick={() => setShowProfileEdit(true)}
+                  className="rounded-xl border border-slate-200 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:bg-white/[0.08]"
                 >
-                  {language === 'en' ? 'Log out' : 'Выйти'}
+                  {language === 'en' ? 'Edit profile' : 'Редактировать профиль'}
                 </button>
               </div>
-              <form onSubmit={save} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="block text-sm text-slate-600 dark:text-slate-300">{language === 'en' ? 'Profile photo' : 'Фото профиля'}</label>
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white/85 dark:border-white/10 dark:bg-white/[0.04]">
-                      {displayAvatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={displayAvatar} alt="Profile" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="text-lg font-semibold text-slate-700 dark:text-slate-200">{avatarText}</span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="cursor-pointer rounded-xl border border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-700 transition hover:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:bg-white/[0.08]">
-                        {language === 'en' ? 'Upload photo' : 'Загрузить фото'}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => setProfilePhotoDraft(e.target.files?.[0] || null)}
-                        />
-                      </label>
-                      {canRemoveAvatar && (
-                        <button
-                          type="button"
-                          onClick={() => setAvatarDraft('remove')}
-                          className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:text-slate-400 dark:hover:bg-white/[0.08]"
-                        >
-                          {language === 'en' ? 'Remove photo' : 'Удалить фото'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-sm text-slate-600 dark:text-slate-300">{language === 'en' ? 'Profile name' : 'Имя профиля'}</label>
-                  <input
-                    className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder={language === 'en' ? 'Name' : 'Имя'}
-                  />
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Account</div>
-                  <div className="mt-2 text-sm text-slate-200">{user.email}</div>
-                  <div className="mt-1 text-xs text-slate-400">
-                    {userProfile?.createdAt
-                      ? language === 'en'
-                        ? `Joined ${new Date(userProfile.createdAt).toLocaleDateString('en-US')}`
-                        : `С нами с ${new Date(userProfile.createdAt).toLocaleDateString('ru-RU')}`
-                      : language === 'en'
-                      ? 'Account information'
-                      : 'Информация аккаунта'}
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110 disabled:opacity-50"
-                >
-                  {saving ? (language === 'en' ? 'Saving...' : 'Сохранение...') : (language === 'en' ? 'Save changes' : 'Сохранить изменения')}
-                </button>
-              </form>
-            </section>
             </div>
           </div>
         </div>
       </div>
+
+      <EditProfilePanel
+        open={showProfileEdit}
+        language={language}
+        saving={saving}
+        name={name}
+        setName={setName}
+        userEmail={user.email}
+        createdAt={userProfile?.createdAt ?? null}
+        displayAvatar={displayAvatar}
+        avatarText={avatarText}
+        canRemoveAvatar={canRemoveAvatar}
+        onClose={() => setShowProfileEdit(false)}
+        onLogout={logout}
+        onSubmit={save}
+        onUploadPhoto={setProfilePhotoDraft}
+        onRemovePhoto={() => setAvatarDraft('remove')}
+      />
     </main>
   );
 }

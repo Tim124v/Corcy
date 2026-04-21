@@ -1,5 +1,6 @@
 import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { mapMessagesText, prepareMessageForApi, prepareMessageForStorage } from '../security/message-encryption.util.js';
 
 @Injectable()
 export class MessagesService {
@@ -7,7 +8,7 @@ export class MessagesService {
 
   async getThread(currentUserId: string, peerId: string) {
     if (!peerId) throw new BadRequestException('peerId is required');
-    return this.prisma.message.findMany({
+    const rows = await this.prisma.message.findMany({
       where: {
         OR: [
           { senderId: currentUserId, recipientId: peerId },
@@ -17,6 +18,7 @@ export class MessagesService {
       orderBy: { createdAt: 'asc' },
       take: 200,
     });
+    return mapMessagesText(rows);
   }
 
   async send(
@@ -31,16 +33,17 @@ export class MessagesService {
     if (currentUserId === to) throw new ForbiddenException('Cannot message yourself');
     const recipient = await this.prisma.user.findUnique({ where: { id: to } });
     if (!recipient) throw new BadRequestException('Recipient not found');
-    return this.prisma.message.create({
+    const row = await this.prisma.message.create({
       data: {
         senderId: currentUserId,
         recipientId: to,
-        text: hasText ? text.trim() : '',
+        text: hasText ? prepareMessageForStorage(text.trim()) : '',
         attachmentUrl: attachment?.url ?? null,
         attachmentName: attachment?.name ?? null,
         attachmentType: attachment?.type ?? null,
       },
     });
+    return { ...row, text: prepareMessageForApi(row.text) };
   }
 
   async remove(currentUserId: string, messageId: string) {

@@ -1,6 +1,8 @@
 'use client';
 
 import { useLanguage } from '../language-provider';
+import { Avatar } from '../ui/Avatar';
+import { Button } from '../ui/Button';
 
 type User = { id: string; email: string; name: string | null };
 
@@ -80,21 +82,16 @@ export function ProfileHeader({
 
       <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center">
         <div className="relative shrink-0">
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt={displayName}
-            className="h-28 w-28 rounded-full object-cover shadow-[0_0_0_4px_rgba(255,255,255,0.95),0_0_0_8px_rgba(59,130,246,0.18),0_20px_45px_-15px_rgba(59,130,246,0.35)] dark:shadow-[0_0_0_4px_rgba(15,23,42,0.85),0_0_0_8px_rgba(59,130,246,0.35),0_20px_45px_-15px_rgba(59,130,246,0.85)]"
-            />
-          ) : (
-            <div className="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-blue-500 to-violet-600 text-4xl font-semibold text-white shadow-[0_0_0_4px_rgba(255,255,255,0.95),0_0_0_8px_rgba(59,130,246,0.18),0_20px_45px_-15px_rgba(59,130,246,0.35)] dark:shadow-[0_0_0_4px_rgba(15,23,42,0.85),0_0_0_8px_rgba(59,130,246,0.35),0_20px_45px_-15px_rgba(59,130,246,0.85)]">
-              {initials(user.name, user.email)}
-            </div>
-          )}
+          <Avatar
+            name={displayName}
+            src={avatarUrl}
+            size="xl"
+            online
+            className="w-28 h-28 shadow-[0_0_0_4px_rgba(255,255,255,0.95),0_0_0_8px_rgba(59,130,246,0.18),0_20px_45px_-15px_rgba(59,130,246,0.35)] dark:shadow-[0_0_0_4px_rgba(15,23,42,0.85),0_0_0_8px_rgba(59,130,246,0.35),0_20px_45px_-15px_rgba(59,130,246,0.85)]"
+          />
           <span
             className="absolute bottom-2 right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 dark:border-slate-950"
-            title="Online"
+            title="Онлайн"
           >
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
           </span>
@@ -128,14 +125,10 @@ export function ProfileHeader({
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-2">
             {onEditProfile && (
-              <button
-                type="button"
-                onClick={onEditProfile}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-medium text-white shadow-[0_18px_40px_-18px_rgba(59,130,246,0.95)] transition hover:brightness-110"
-              >
+              <Button type="button" onClick={onEditProfile}>
                 <IconPencil />
                 {language === 'en' ? 'Edit Profile' : 'Редактировать профиль'}
-              </button>
+              </Button>
             )}
             <button type="button" onClick={onSettingsClick} className="rounded-xl border border-slate-200 bg-white/80 p-2.5 text-slate-700 transition hover:bg-white dark:border-white/10 dark:bg-white/[0.05] dark:text-slate-300 dark:hover:bg-white/[0.1]" title="Настройки" aria-label="Настройки">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 2.31.826 1.37 1.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 2.31-1.37 1.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-2.31-.826-1.37-1.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-2.31 1.37-1.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>

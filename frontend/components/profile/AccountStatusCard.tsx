@@ -12,9 +12,9 @@ type AccountStatusCardProps = {
 };
 
 const statusMap: Record<AccountStatus, { label: string; classes: string }> = {
-  online: { label: 'Online', classes: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' },
-  offline: { label: 'Offline', classes: 'border-slate-500/20 bg-slate-500/10 text-slate-300' },
-  connected: { label: 'Connected', classes: 'border-blue-500/20 bg-blue-500/10 text-blue-300' },
+  online: { label: 'Онлайн', classes: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' },
+  offline: { label: 'Оффлайн', classes: 'border-slate-500/20 bg-slate-500/10 text-slate-300' },
+  connected: { label: 'Подключено', classes: 'border-blue-500/20 bg-blue-500/10 text-blue-300' },
 };
 
 export function AccountStatusCard({ onThemeToggle, onRefresh, status = 'online', onStatusChange }: AccountStatusCardProps) {
