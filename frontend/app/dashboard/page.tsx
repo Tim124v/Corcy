@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
-import { useAuthStore } from '../../store/auth';
+import { getAccessToken, useAuthStore } from '../../store/auth';
 import { useLanguage } from '../../components/language-provider';
 import { useTheme } from '../../components/theme-provider';
 import { useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
@@ -403,7 +403,7 @@ function DashboardInner() {
     };
 
     void pollDirectUnread();
-    const intervalId = setInterval(() => void pollDirectUnread(), 5000);
+    const intervalId = setInterval(() => void pollDirectUnread(), 20000);
 
     return () => {
       cancelled = true;
@@ -449,7 +449,7 @@ function DashboardInner() {
     };
 
     void pollRoomUnread();
-    const intervalId = setInterval(() => void pollRoomUnread(), 5000);
+    const intervalId = setInterval(() => void pollRoomUnread(), 20000);
 
     return () => {
       cancelled = true;
@@ -560,7 +560,7 @@ function DashboardInner() {
         if (currentAttachment) {
           const fd = new FormData();
           fd.append('file', currentAttachment.file, currentAttachment.name);
-          const token = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '');
+          const token = accessToken || getAccessToken() || '';
           const res = await fetch(`${API_URL}/messages/upload`, {
             method: 'POST',
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -617,7 +617,7 @@ function DashboardInner() {
       if (currentAttachment) {
         const fd = new FormData();
         fd.append('file', currentAttachment.file, currentAttachment.name);
-        const token = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '');
+        const token = accessToken || getAccessToken() || '';
         const res = await fetch(`${API_URL}/messages/upload`, {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
