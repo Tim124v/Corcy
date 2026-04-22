@@ -31,19 +31,30 @@ async function bootstrap() {
 
   // Важно: CORS должен быть зарегистрирован как можно раньше, чтобы preflight (OPTIONS)
   // получил корректные заголовки даже если последующие middleware завершают ответ.
-  const corsOriginRaw =
-    configService.get<string>('CORS_ORIGIN') ||
-    configService.get<string>('FRONTEND_URL') ||
-    'http://localhost:3000';
-  const corsOrigins = corsOriginRaw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const corsOriginRaw = [
+    configService.get<string>('CORS_ORIGIN'),
+    configService.get<string>('FRONTEND_URL'),
+  ]
+    .filter(Boolean)
+    .join(',');
+
+  const corsOrigins = new Set(
+    (corsOriginRaw || 'http://localhost:3000')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+
+  // В dev почти всегда нужен localhost, даже если в .env случайно стоят прод-урлы.
+  if (isDev) {
+    corsOrigins.add('http://localhost:3000');
+    corsOrigins.add('http://127.0.0.1:3000');
+  }
   app.enableCors({
     origin: (origin, cb) => {
       // origin может быть undefined (например, curl/Postman) — разрешаем
       if (!origin) return cb(null, true);
-      return cb(null, corsOrigins.includes(origin));
+      return cb(null, corsOrigins.has(origin));
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
