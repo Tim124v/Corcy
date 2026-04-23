@@ -139,7 +139,6 @@ export class AuthService {
         name: opts?.name?.trim() || null,
         passwordHash,
         isVerified: false,
-        registeredViaInviteId: invite?.id ?? null,
       },
       select: {
         id: true,
@@ -158,7 +157,6 @@ export class AuthService {
           usedCount: { increment: 1 },
           usedAt: new Date(),
           usedById: user.id,
-          registeredUserId: user.id,
           isActive: maxU > invite.usedCount + 1,
         },
       });
