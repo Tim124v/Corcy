@@ -9,8 +9,6 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
-    "@splinetool/react-spline": "^2.2.6",
-    "@splinetool/runtime": "^1.12.61",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
     "next": "14.2.5",

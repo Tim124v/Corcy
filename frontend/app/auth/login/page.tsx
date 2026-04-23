@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { api } from '../../../lib/api';
 import { sanitizeRedirect } from '../../../lib/sanitize-redirect';
 import { useAuthStore } from '../../../store/auth';
-import { SplineScene } from '../../../components/ui/splite';
 import { SecureInput } from '../../../components/ui/SecureInput';
 import { Button } from '../../../components/ui/Button';
 
@@ -96,66 +95,21 @@ function LoginPageInner() {
   return (
     <Suspense fallback={null}>
       <main className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-50">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-24 -top-32 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl" />
-        <div className="absolute right-10 top-10 h-64 w-64 rounded-full bg-indigo-500/20 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-40 w-40 rounded-full bg-cyan-400/20 blur-3xl" />
-        <div
-          className="absolute inset-0 opacity-25 mix-blend-soft-light"
-          style={{
-            backgroundImage:
-              'radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.08), transparent 50%), radial-gradient(1px 1px at 80% 0%, rgba(255,255,255,0.06), transparent 50%), radial-gradient(1px 1px at 50% 100%, rgba(255,255,255,0.05), transparent 50%)',
-          }}
-        />
-      </div>
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-24 -top-32 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl" />
+          <div className="absolute right-10 top-10 h-64 w-64 rounded-full bg-indigo-500/20 blur-3xl" />
+          <div className="absolute bottom-0 left-1/3 h-40 w-40 rounded-full bg-cyan-400/20 blur-3xl" />
+          <div
+            className="absolute inset-0 opacity-25 mix-blend-soft-light"
+            style={{
+              backgroundImage:
+                'radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.08), transparent 50%), radial-gradient(1px 1px at 80% 0%, rgba(255,255,255,0.06), transparent 50%), radial-gradient(1px 1px at 50% 100%, rgba(255,255,255,0.05), transparent 50%)',
+            }}
+          />
+        </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:gap-10 sm:py-10 lg:px-10">
-        <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 font-semibold text-white shadow-lg shadow-blue-500/30">
-              CX
-            </div>
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-blue-200/80">Connexy</p>
-              <h1 className="text-lg font-semibold text-slate-50">Приватное общение</h1>
-            </div>
-          </div>
-          <div className="hidden text-sm text-slate-300 md:flex items-center gap-3">
-            <span className="rounded-full bg-green-500/15 px-3 py-1 text-green-200">Онлайн</span>
-            <span className="text-slate-400">Безопасность по умолчанию</span>
-          </div>
-        </header>
-
-        <div className="grid h-full flex-1 items-stretch gap-6 lg:grid-cols-[480px,1fr]">
-          <div className="relative flex h-full min-h-[360px] flex-col gap-6 order-1 lg:order-2">
-            <div className="relative h-full overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 shadow-[0_30px_140px_-80px_rgba(0,0,0,1)]">
-              <SplineScene
-                scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
-                className="w-full h-[360px] sm:h-[420px] lg:h-[520px]"
-                lockZoom
-              />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-l from-slate-950/70 via-slate-950/20 to-transparent" />
-              <div className="absolute left-6 bottom-6 flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/50 px-4 py-3 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.2em] text-blue-200">Realtime</p>
-                <p className="text-lg font-semibold text-white">Личные связи без шума</p>
-                <p className="text-sm text-slate-400">Приглашайте по ссылке или email — общайтесь только с теми, кого добавили.</p>
-              </div>
-            </div>
-            <div className="hidden gap-3 sm:grid sm:grid-cols-2">
-              {[
-                { title: 'Приглашения по ссылке', desc: 'Вы решаете, кто в вашем круге. Одна ссылка — и человек рядом.' },
-                { title: 'Файлы и медиа', desc: 'Картинки и файлы прямо в чате, без лишних сервисов.' },
-                { title: 'Только ваши люди', desc: 'Никаких случайных контактов. Только те, кому вы доверяете.' },
-                { title: 'Без лишнего шума', desc: 'Чистый интерфейс и быстрый поиск. Сфокусируйтесь на общении.' },
-              ].map((item) => (
-                <div key={item.title} className="rounded-xl border border-white/5 bg-white/5 px-4 py-3">
-                  <p className="text-sm font-semibold text-white">{item.title}</p>
-                  <p className="text-xs text-slate-400">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="order-2 lg:order-1 rounded-3xl border border-white/5 bg-slate-900/70 p-6 shadow-[0_30px_120px_-60px_rgba(0,0,0,0.9)] backdrop-blur sm:p-8 lg:p-10">
+        <div className="relative z-10 flex items-center justify-center min-h-screen px-4 py-10">
+          <div className="w-full max-w-md rounded-3xl border border-white/5 bg-slate-900/70 p-6 shadow-[0_30px_120px_-60px_rgba(0,0,0,0.9)] backdrop-blur sm:p-8">
             <div className="space-y-2">
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
                 🔒 Сквозное шифрование
@@ -281,9 +235,7 @@ function LoginPageInner() {
               </Link>
             </p>
           </div>
-
         </div>
-      </div>
     </main>
     </Suspense>
   );
