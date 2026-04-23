@@ -5,6 +5,9 @@ import Providers from './providers';
 export const metadata: Metadata = {
   title: 'Contacts',
   description: 'Simple contacts and invites',
+  icons: {
+    icon: [{ url: '/connexy_favicon.svg', type: 'image/svg+xml' }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
