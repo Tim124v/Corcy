@@ -2,19 +2,21 @@ import { z } from 'zod';
 
 export const RegisterSchema = z.object({
   email: z
-    .string({ required_error: 'Email обязателен' })
+    .string()
+    .min(1, 'Email обязателен')
     .email('Некорректный формат email')
     .max(255)
     .toLowerCase()
     .trim(),
 
-  password: z.string({ required_error: 'Пароль обязателен' }).min(8, 'Минимум 8 символов').max(128),
+  password: z.string().min(1, 'Пароль обязателен').min(8, 'Минимум 8 символов').max(128),
 
   name: z.string().max(50).trim().optional(),
 
   // Токен приглашения — обязательный
   inviteToken: z
-    .string({ required_error: 'Токен приглашения обязателен' })
+    .string()
+    .min(1, 'Токен приглашения обязателен')
     .min(10, 'Неверный токен приглашения')
     .max(200),
 });

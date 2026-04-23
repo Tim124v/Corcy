@@ -135,8 +135,8 @@ export class RoomsService {
       include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
       take: 200,
     });
-    const decrypted = mapMessagesText(messages);
-    return decrypted.map((m: RoomMessageWithSender) => ({
+    const decrypted = mapMessagesText(messages) as RoomMessageWithSender[];
+    return decrypted.map((m) => ({
       id: m.id,
       text: m.text,
       senderId: m.senderId,

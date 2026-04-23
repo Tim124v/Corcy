@@ -99,7 +99,7 @@ export class ConnectionsService {
       orderBy: { createdAt: 'desc' },
       include: { fromUser: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
-    return list.map((r) => ({
+    return list.map((r: (typeof list)[number]) => ({
       id: r.id,
       fromUser: r.fromUser,
       createdAt: r.createdAt,
