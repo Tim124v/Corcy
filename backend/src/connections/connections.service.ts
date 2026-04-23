@@ -358,6 +358,55 @@ export class ConnectionsService {
     return { ok: true as const };
   }
 
+  async getInviteInfo(rawToken: string) {
+    const h = InviteTokenUtil.hash(rawToken);
+
+    const invite = await this.prisma.invite.findFirst({
+      where: {
+        AND: [{ OR: [{ tokenHash: h }, { token: rawToken }] }, { isActive: true }],
+      },
+      include: {
+        fromUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!invite) {
+      throw new NotFoundException('Приглашение не найдено или уже недействительно');
+    }
+
+    if (invite.expiresAt < new Date()) {
+      throw new BadRequestException('Срок действия приглашения истёк');
+    }
+
+    const maxU = invite.maxUses ?? 1;
+    if (invite.usedCount >= maxU) {
+      throw new BadRequestException('Приглашение уже использовано');
+    }
+
+    // Возвращаем только публичную информацию — без токена и хешей
+    return {
+      ok: true,
+      invite: {
+        id: invite.id,
+        expiresAt: invite.expiresAt,
+        fromUser: {
+          name: invite.fromUser.name,
+          email: invite.fromUser.email,
+          avatarUrl: invite.fromUser.avatarUrl,
+          memberSince: invite.fromUser.createdAt,
+        },
+      },
+    };
+  }
+
   async acceptInvite(rawToken: string, userId: string) {
     const h = InviteTokenUtil.hash(rawToken);
     const invite = await this.prisma.invite.findFirst({

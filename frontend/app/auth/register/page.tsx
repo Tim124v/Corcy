@@ -16,6 +16,13 @@ function RegisterPageInner() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const redirect = searchParams.get('redirect');
   const safeRedirect = sanitizeRedirect(redirect);
+  const inviteToken = searchParams.get('invite') || '';
+  const [inviteInfo, setInviteInfo] = useState<{
+    fromUser?: { name: string | null; email: string; avatarUrl: string | null };
+    isBootstrap?: boolean;
+  } | null>(null);
+  const [inviteChecking, setInviteChecking] = useState(true);
+  const [inviteError, setInviteError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -27,6 +34,36 @@ function RegisterPageInner() {
     const safe = sanitizeRedirect(redirect);
     if (safe && typeof window !== 'undefined') sessionStorage.setItem('auth_redirect', safe);
   }, [redirect]);
+
+  useEffect(() => {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    if (!inviteToken) {
+      router.replace('/auth/no-invite');
+      return;
+    }
+
+    fetch(`${API_URL}/auth/check-invite?token=${encodeURIComponent(inviteToken)}`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          setInviteError(data?.error || 'Приглашение недействительно');
+          setInviteChecking(false);
+          return;
+        }
+        setInviteInfo({
+          fromUser: data.fromUser,
+          isBootstrap: data.isBootstrap,
+        });
+        setInviteChecking(false);
+      })
+      .catch(() => {
+        setInviteError('Не удалось проверить приглашение');
+        setInviteChecking(false);
+      });
+  }, [inviteToken, router]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +98,7 @@ function RegisterPageInner() {
           password,
           confirmPassword,
           name: name.trim() || undefined,
+          inviteToken,
         }),
       });
       if (!res.ok) {
@@ -164,6 +202,53 @@ function RegisterPageInner() {
               <p className="text-sm text-slate-400">Приглашения, контакты и защищённые чаты в одном месте.</p>
             </div>
 
+            {inviteChecking && (
+              <div className="flex items-center gap-2 text-sm text-white/50 mt-5">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                Проверяем приглашение...
+              </div>
+            )}
+
+            {inviteError && (
+              <div className="mt-5 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                {inviteError}
+                <div className="mt-2">
+                  <a href="/auth/no-invite" className="text-red-300 underline text-xs">
+                    Узнать как получить приглашение
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {inviteInfo?.fromUser && !inviteChecking && (
+              <div
+                className="mt-5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/15
+                flex items-center gap-3"
+              >
+                {inviteInfo.fromUser.avatarUrl ? (
+                  <img
+                    src={inviteInfo.fromUser.avatarUrl}
+                    alt=""
+                    className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                  />
+                ) : (
+                  <div
+                    className="w-9 h-9 rounded-full bg-emerald-500/20 flex-shrink-0
+                    flex items-center justify-center text-emerald-400 text-sm font-bold"
+                  >
+                    {(inviteInfo.fromUser.name || inviteInfo.fromUser.email)[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-emerald-300 text-xs font-medium">Приглашение от</p>
+                  <p className="text-white text-sm truncate">
+                    {inviteInfo.fromUser.name || inviteInfo.fromUser.email}
+                  </p>
+                </div>
+                <span className="ml-auto text-emerald-400 flex-shrink-0">✓</span>
+              </div>
+            )}
+
             <form onSubmit={submit} className="mt-6 space-y-4">
               <div className="space-y-1.5">
                 <label className="text-sm text-slate-200">Email</label>
@@ -213,7 +298,7 @@ function RegisterPageInner() {
               {error && <p className="text-sm text-red-400">{error}</p>}
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={loading || inviteChecking || !!inviteError}
                 loading={loading}
                 fullWidth
                 className="rounded-xl px-4 py-3 text-sm font-semibold shadow-lg shadow-blue-500/30"

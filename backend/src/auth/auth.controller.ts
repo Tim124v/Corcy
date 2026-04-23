@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
+  Query,
   Req,
   Res,
   HttpCode,
@@ -53,7 +55,54 @@ export class AuthController {
 
   @Post('register')
   async register(@Body(new ZodValidationPipe(RegisterSchema)) body: RegisterDto) {
-    return this.auth.register(body.email, body.password, { name: body.name });
+    return this.auth.register(body.email, body.password, body.inviteToken, { name: body.name });
+  }
+
+  // GET /auth/check-invite?token=XXX
+  // Публичный — проверяет что инвайт существует и валиден
+  // Используется страницей регистрации для предзаполнения
+  @Get('check-invite')
+  async checkInvite(@Query('token') token: string) {
+    if (!token) {
+      return { ok: false, error: 'Token required' };
+    }
+
+    const bootstrapToken = process.env.BOOTSTRAP_INVITE_TOKEN;
+    if (bootstrapToken && bootstrapToken.length > 0 && token === bootstrapToken) {
+      return { ok: true, isBootstrap: true };
+    }
+
+    const { InviteTokenUtil } = await import('../invites/invite-security.util.js');
+    const tokenHash = InviteTokenUtil.hash(token);
+
+    const invite = await this.prisma.invite.findFirst({
+      where: {
+        AND: [{ OR: [{ tokenHash }, { token }] }, { isActive: true }],
+      },
+      include: {
+        fromUser: {
+          select: { name: true, email: true, avatarUrl: true },
+        },
+      },
+    });
+
+    if (!invite || invite.expiresAt < new Date()) {
+      return { ok: false, error: 'Приглашение недействительно или истекло' };
+    }
+
+    const maxU = invite.maxUses ?? 1;
+    if (invite.usedCount >= maxU) {
+      return { ok: false, error: 'Приглашение уже использовано' };
+    }
+
+    return {
+      ok: true,
+      fromUser: {
+        name: invite.fromUser.name,
+        email: invite.fromUser.email,
+        avatarUrl: invite.fromUser.avatarUrl,
+      },
+    };
   }
 
   @Post('verify-email')

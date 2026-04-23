@@ -1,30 +1,23 @@
 import { z } from 'zod';
 
-export const RegisterSchema = z
-  .object({
-    email: z
-      .string()
-      .min(1, 'Email обязателен')
-      .email('Некорректный формат email')
-      .max(255, 'Email слишком длинный')
-      .transform((s) => s.toLowerCase().trim()),
+export const RegisterSchema = z.object({
+  email: z
+    .string({ required_error: 'Email обязателен' })
+    .email('Некорректный формат email')
+    .max(255)
+    .toLowerCase()
+    .trim(),
 
-    password: z
-      .string()
-      .min(1, 'Пароль обязателен')
-      .min(8, 'Минимум 8 символов')
-      .max(128, 'Пароль слишком длинный')
-      .regex(/[A-Z]/, 'Нужна хотя бы одна заглавная буква')
-      .regex(/[a-z]/, 'Нужна хотя бы одна строчная буква')
-      .regex(/[0-9]/, 'Нужна хотя бы одна цифра'),
+  password: z.string({ required_error: 'Пароль обязателен' }).min(8, 'Минимум 8 символов').max(128),
 
-    confirmPassword: z.string().optional(),
-    name: z.string().max(50, 'Имя слишком длинное').trim().optional(),
-  })
-  .refine((d) => d.confirmPassword === undefined || d.confirmPassword === d.password, {
-    message: 'Пароли не совпадают',
-    path: ['confirmPassword'],
-  });
+  name: z.string().max(50).trim().optional(),
+
+  // Токен приглашения — обязательный
+  inviteToken: z
+    .string({ required_error: 'Токен приглашения обязателен' })
+    .min(10, 'Неверный токен приглашения')
+    .max(200),
+});
 
 export const LoginSchema = z.object({
   email: z

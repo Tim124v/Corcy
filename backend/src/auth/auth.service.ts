@@ -63,35 +63,135 @@ export class AuthService {
   async register(
     email: string,
     password: string,
-    opts?: { username?: string; name?: string },
+    inviteToken: string,
+    opts?: { name?: string },
   ) {
     const emailNorm = email.toLowerCase().trim();
-    const usernameNorm = opts?.username?.trim() || null;
 
-    const existingByEmail = await this.prisma.user.findUnique({ where: { email: emailNorm } });
-    if (existingByEmail) return { ok: false, error: 'Email already registered' };
+    // ─── Проверка инвайта ──────────────────────────────────────────────────
+    // Специальный bootstrap токен для первого пользователя
+    const bootstrapToken = process.env.BOOTSTRAP_INVITE_TOKEN;
+    const isBootstrap =
+      bootstrapToken &&
+      bootstrapToken.length > 0 &&
+      inviteToken === bootstrapToken;
 
-    if (usernameNorm) {
-      const existingByUsername = await this.prisma.user.findFirst({
-        where: { username: { equals: usernameNorm, mode: 'insensitive' } },
+    let invite: {
+      id: string;
+      fromUserId: string;
+      expiresAt: Date;
+      usedCount: number;
+      maxUses: number | null;
+      isActive: boolean;
+    } | null = null;
+
+    if (!isBootstrap) {
+      const { InviteTokenUtil } = await import('../invites/invite-security.util.js');
+      const tokenHash = InviteTokenUtil.hash(inviteToken);
+
+      invite = await this.prisma.invite.findFirst({
+        where: {
+          AND: [{ OR: [{ tokenHash }, { token: inviteToken }] }, { isActive: true }],
+        },
+        select: {
+          id: true,
+          fromUserId: true,
+          expiresAt: true,
+          usedCount: true,
+          maxUses: true,
+          isActive: true,
+        },
       });
-      if (existingByUsername) return { ok: false, error: 'Username already taken' };
+
+      if (!invite) {
+        await this.audit.log({
+          action: 'REGISTER_INVALID_INVITE',
+          ipAddress: undefined,
+          severity: 'MEDIUM',
+          metadata: { email: emailNorm },
+        });
+        return { ok: false, error: 'Приглашение недействительно или не существует' };
+      }
+
+      if (invite.expiresAt < new Date()) {
+        return { ok: false, error: 'Срок действия приглашения истёк' };
+      }
+
+      const maxU = invite.maxUses ?? 1;
+      if (invite.usedCount >= maxU) {
+        return { ok: false, error: 'Приглашение уже использовано' };
+      }
     }
 
+    // ─── Проверка email ────────────────────────────────────────────────────
+    const existingByEmail = await this.prisma.user.findUnique({
+      where: { email: emailNorm },
+    });
+    if (existingByEmail) {
+      return { ok: false, error: 'Email already registered' };
+    }
+
+    // ─── Создание пользователя ────────────────────────────────────────────
     const passwordHash = await hashPassword(password);
     const user = await this.prisma.user.create({
       data: {
         email: emailNorm,
-        username: usernameNorm,
         name: opts?.name?.trim() || null,
         passwordHash,
         isVerified: false,
+        registeredViaInviteId: invite?.id ?? null,
       },
-      select: { id: true, email: true, name: true, avatarUrl: true, username: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+      },
     });
 
+    // ─── Помечаем инвайт использованным ──────────────────────────────────
+    if (invite) {
+      const maxU = invite.maxUses ?? 1;
+      await this.prisma.invite.update({
+        where: { id: invite.id },
+        data: {
+          usedCount: { increment: 1 },
+          usedAt: new Date(),
+          usedById: user.id,
+          registeredUserId: user.id,
+          isActive: maxU > invite.usedCount + 1,
+        },
+      });
+
+      const fromUserId = invite.fromUserId;
+      const [uid1, uid2] = fromUserId < user.id ? [fromUserId, user.id] : [user.id, fromUserId];
+
+      await this.prisma.connection
+        .upsert({
+          where: { userIdA_userIdB: { userIdA: uid1, userIdB: uid2 } },
+          create: { userIdA: uid1, userIdB: uid2 },
+          update: {},
+        })
+        .catch(() => {});
+
+      await this.audit.log({
+        userId: user.id,
+        action: 'REGISTER_VIA_INVITE',
+        severity: 'LOW',
+        metadata: { inviteId: invite.id, fromUserId },
+      });
+    } else {
+      await this.audit.log({
+        userId: user.id,
+        action: 'REGISTER_BOOTSTRAP',
+        severity: 'MEDIUM',
+      });
+    }
+
+    // ─── Email верификация ────────────────────────────────────────────────
     const code = generateSixDigitCode();
     const expiresAt = new Date(Date.now() + VERIFICATION_CODE_EXPIRY_MINUTES * 60 * 1000);
+
     await this.prisma.emailVerification.create({
       data: { userId: user.id, code, expiresAt },
     });
@@ -102,7 +202,12 @@ export class AuthService {
       ok: true,
       needVerification: true,
       email: user.email,
-      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, username: user.username },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+      },
     };
   }
 
