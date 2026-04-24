@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useLanguage, type AppLanguage } from '../language-provider';
 import type { NotificationCategorySettings, NotificationType } from '../../store/notifications';
-
-const STORAGE_ACCENT = 'connexy-accent';
 
 type AppearancePanelProps = {
   theme?: 'light' | 'dark';
@@ -14,14 +12,6 @@ type AppearancePanelProps = {
   notificationCategoryEnabled?: NotificationCategorySettings;
   onNotificationCategoryToggle?: (type: NotificationType, enabled: boolean) => void;
 };
-
-const accents = [
-  { id: 'blue', label: 'Синий', class: 'bg-blue-500' },
-  { id: 'purple', label: 'Фиолетовый', class: 'bg-purple-500' },
-  { id: 'green', label: 'Зелёный', class: 'bg-emerald-500' },
-  { id: 'orange', label: 'Оранжевый', class: 'bg-orange-500' },
-  { id: 'red', label: 'Красный', class: 'bg-red-500' },
-];
 
 const languages = [
   { id: 'ru', label: 'Русский (RU)' },
@@ -90,17 +80,7 @@ export function AppearancePanel({
   },
   onNotificationCategoryToggle,
 }: AppearancePanelProps) {
-  const [accent, setAccent] = useState('blue');
   const { language, setLanguage } = useLanguage();
-
-  useEffect(() => {
-    const a = localStorage.getItem(STORAGE_ACCENT) || 'blue';
-    setAccent(a);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_ACCENT, accent);
-  }, [accent]);
 
   return (
     <section className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
@@ -127,25 +107,6 @@ export function AppearancePanel({
                 }`}
               >
                 {language === 'en' ? (t === 'dark' ? 'Dark' : 'Light') : (t === 'dark' ? 'Тёмная' : 'Светлая')}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">{language === 'en' ? 'Accent Color' : 'Акцентный цвет'}</div>
-          <div className="flex gap-2">
-            {accents.map(({ id, label, class: c }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setAccent(id)}
-                className={`w-9 h-9 rounded-full border-2 transition ${c} ${
-                  accent === id ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-950 ring-blue-400' : 'border-slate-300 hover:opacity-90 dark:border-white/20'
-                }`}
-                title={label}
-              >
-                <span className="sr-only">{label}</span>
               </button>
             ))}
           </div>

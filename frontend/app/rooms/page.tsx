@@ -229,6 +229,7 @@ export default function RoomsPage() {
                 onChange={setRoomPassword}
                 placeholder={isEn ? 'Room password' : 'Пароль комнаты'}
                 autoComplete="new-password"
+                dataFormType="other"
                 className="app-input rounded-2xl pr-[4.5rem] px-4 py-3.5 text-sm outline-none transition focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/20"
               />
               <div className="flex flex-wrap items-center gap-3">

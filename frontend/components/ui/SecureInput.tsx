@@ -10,6 +10,7 @@ export interface SecureInputProps {
   className?: string;
   disabled?: boolean;
   autoComplete?: string;
+  dataFormType?: string;
   name?: string;
   id?: string;
   required?: boolean;
@@ -24,6 +25,7 @@ export const SecureInput = forwardRef<HTMLInputElement, SecureInputProps>(functi
     className = '',
     disabled = false,
     autoComplete = 'current-password',
+    dataFormType,
     name,
     id,
     required,
@@ -47,6 +49,7 @@ export const SecureInput = forwardRef<HTMLInputElement, SecureInputProps>(functi
         maxLength={maxLength}
         disabled={disabled}
         autoComplete={autoComplete}
+        data-form-type={dataFormType}
         spellCheck={false}
         onContextMenu={blockContextMenu}
         name={name}

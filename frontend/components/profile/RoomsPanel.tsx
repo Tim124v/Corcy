@@ -119,6 +119,7 @@ export function RoomsPanel({
           <SecureInput
             name="room-password"
             autoComplete="new-password"
+            dataFormType="other"
             className="app-input w-full rounded-xl pr-[4.5rem] px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
             value={roomPass}
             onChange={setRoomPass}

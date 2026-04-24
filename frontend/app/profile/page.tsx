@@ -150,6 +150,7 @@ export default function ProfilePage() {
       setAuth(updated, accessToken);
       setStoredUserAvatar(user.id, updated.avatarUrl ?? null);
       setAvatarDraft(null);
+      setShowProfileEdit(false);
     } finally {
       setSaving(false);
     }
