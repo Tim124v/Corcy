@@ -2,7 +2,7 @@
 
 import { useLanguage } from '../language-provider';
 
-type AccountStatus = 'online' | 'offline' | 'connected';
+type AccountStatus = 'online' | 'offline';
 
 type AccountStatusCardProps = {
   onThemeToggle?: () => void;
@@ -14,7 +14,6 @@ type AccountStatusCardProps = {
 const statusMap: Record<AccountStatus, { label: string; classes: string }> = {
   online: { label: 'Онлайн', classes: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' },
   offline: { label: 'Оффлайн', classes: 'border-slate-500/20 bg-slate-500/10 text-slate-300' },
-  connected: { label: 'Подключено', classes: 'border-blue-500/20 bg-blue-500/10 text-blue-300' },
 };
 
 export function AccountStatusCard({ onThemeToggle, onRefresh, status = 'online', onStatusChange }: AccountStatusCardProps) {
@@ -32,7 +31,6 @@ export function AccountStatusCard({ onThemeToggle, onRefresh, status = 'online',
         >
           <option value="online">{language === 'en' ? 'Online' : 'Онлайн'}</option>
           <option value="offline">{language === 'en' ? 'Offline' : 'Оффлайн'}</option>
-          <option value="connected">{language === 'en' ? 'Connected' : 'Подключено'}</option>
         </select>
         <div className="flex gap-2">
           <button type="button" onClick={onThemeToggle} className="rounded-xl border border-slate-200 bg-white/75 p-2.5 text-slate-600 transition hover:bg-white dark:border-white/10 dark:bg-white/[0.05] dark:text-slate-300 dark:hover:bg-white/[0.1]" title="Тема" aria-label="Тема">
