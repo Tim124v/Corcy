@@ -498,7 +498,9 @@ function DashboardInner() {
         setError(res.error || 'Не удалось создать ссылку');
         return;
       }
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        (typeof window !== 'undefined' ? window.location.origin : '');
       const link = res.link || (res.token ? `${baseUrl}/invite/${res.token}` : '');
       if (link) {
         setInviteLink(link);
