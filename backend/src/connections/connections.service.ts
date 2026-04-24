@@ -170,12 +170,10 @@ export class ConnectionsService {
     return opts?.expiresHours ?? (Number(process.env.INVITE_TOKEN_EXPIRES_HOURS) || 30 * 24);
   }
 
-  /** Создать приглашение по ссылке (без email). Кто перейдёт по ссылке — зарегистрируется/войдёт и попадёт в контакты. */
-  async createInviteLink(userId: string, opts?: CreateInviteDto) {
-    const me = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!me) throw new ForbiddenException();
-    await this.assertUnderActiveInviteLimit(userId);
-
+  private async createInviteRecord(
+    fromUserId: string,
+    opts?: CreateInviteDto & { toEmail?: string | null },
+  ): Promise<{ inviteId: string; rawToken: string }> {
     const rawToken = InviteTokenUtil.generate();
     const tokenHash = InviteTokenUtil.hash(rawToken);
     const placeholderToken = randomBytes(32).toString('hex');
@@ -184,22 +182,34 @@ export class ConnectionsService {
 
     const invite = await this.prisma.invite.create({
       data: {
-        fromUserId: userId,
+        fromUserId,
         token: placeholderToken,
         tokenHash,
         expiresAt,
-        toEmail: null,
+        toEmail: opts?.toEmail ?? null,
         maxUses: opts?.maxUses ?? null,
         usedCount: 0,
         isActive: true,
       },
+      select: { id: true },
     });
+
+    return { inviteId: invite.id, rawToken };
+  }
+
+  /** Создать приглашение по ссылке (без email). Кто перейдёт по ссылке — зарегистрируется/войдёт и попадёт в контакты. */
+  async createInviteLink(userId: string, opts?: CreateInviteDto) {
+    const me = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!me) throw new ForbiddenException();
+    await this.assertUnderActiveInviteLimit(userId);
+
+    const { inviteId, rawToken } = await this.createInviteRecord(userId, { ...opts, toEmail: null });
 
     await this.audit.log({
       userId,
       action: 'INVITE_CREATED',
       severity: 'LOW',
-      metadata: { inviteId: invite.id },
+      metadata: { inviteId },
     });
 
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -226,30 +236,13 @@ export class ConnectionsService {
 
     await this.assertUnderActiveInviteLimit(userId);
 
-    const rawToken = InviteTokenUtil.generate();
-    const tokenHash = InviteTokenUtil.hash(rawToken);
-    const placeholderToken = randomBytes(32).toString('hex');
-    const hours = this.defaultInviteExpiresHours(opts);
-    const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
-
-    const row = await this.prisma.invite.create({
-      data: {
-        fromUserId: userId,
-        toEmail: toNorm,
-        token: placeholderToken,
-        tokenHash,
-        expiresAt,
-        maxUses: opts?.maxUses ?? null,
-        usedCount: 0,
-        isActive: true,
-      },
-    });
+    const { inviteId, rawToken } = await this.createInviteRecord(userId, { ...opts, toEmail: toNorm });
 
     await this.audit.log({
       userId,
       action: 'INVITE_CREATED',
       severity: 'LOW',
-      metadata: { inviteId: row.id },
+      metadata: { inviteId },
     });
 
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';

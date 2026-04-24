@@ -70,11 +70,11 @@ export class AuthService {
 
     // ─── Проверка инвайта ──────────────────────────────────────────────────
     // Специальный bootstrap токен для первого пользователя
+    const adminSecret = process.env.ADMIN_SETUP_SECRET;
     const bootstrapToken = process.env.BOOTSTRAP_INVITE_TOKEN;
-    const isBootstrap =
-      bootstrapToken &&
-      bootstrapToken.length > 0 &&
-      inviteToken === bootstrapToken;
+    const isAdmin = !!(adminSecret && adminSecret.length > 0 && inviteToken === adminSecret);
+    const isBootstrap = !!(bootstrapToken && bootstrapToken.length > 0 && inviteToken === bootstrapToken);
+    const skipInviteCheck = isAdmin || isBootstrap;
 
     let invite: {
       id: string;
@@ -85,7 +85,7 @@ export class AuthService {
       isActive: boolean;
     } | null = null;
 
-    if (!isBootstrap) {
+    if (!skipInviteCheck) {
       const { InviteTokenUtil } = await import('../invites/invite-security.util.js');
       const tokenHash = InviteTokenUtil.hash(inviteToken);
 
@@ -181,7 +181,7 @@ export class AuthService {
     } else {
       await this.audit.log({
         userId: user.id,
-        action: 'REGISTER_BOOTSTRAP',
+        action: isAdmin ? 'REGISTER_ADMIN' : 'REGISTER_BOOTSTRAP',
         severity: 'MEDIUM',
       });
     }

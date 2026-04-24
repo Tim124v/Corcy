@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    optimizePackageImports: ['zustand']
+    optimizePackageImports: ['zustand', 'lucide-react']
   },
   webpack: (config, { dev }) => {
     if (dev) {
