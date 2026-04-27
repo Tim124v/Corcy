@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditLogService } from '../security/audit-log.service.js';
 import { createTransport } from 'nodemailer';
@@ -125,6 +125,11 @@ export class WaitlistService {
     private readonly audit: AuditLogService,
   ) {}
 
+  private async assertAdmin(adminUserId: string): Promise<void> {
+    const u = await this.prisma.user.findUnique({ where: { id: adminUserId }, select: { isAdmin: true } });
+    if (!u?.isAdmin) throw new ForbiddenException('Admin access required');
+  }
+
   async join(data: {
     email: string;
     name?: string;
@@ -171,7 +176,8 @@ export class WaitlistService {
     };
   }
 
-  async getList(status?: string) {
+  async getList(adminUserId: string, status?: string) {
+    await this.assertAdmin(adminUserId);
     return this.prisma.waitlist.findMany({
       where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
@@ -179,6 +185,7 @@ export class WaitlistService {
   }
 
   async sendInvite(waitlistId: string, adminUserId: string) {
+    await this.assertAdmin(adminUserId);
     const entry = await this.prisma.waitlist.findUnique({ where: { id: waitlistId } });
     if (!entry) throw new BadRequestException('Waitlist entry not found');
     if (entry.status === 'invited') throw new BadRequestException('Already invited');
@@ -221,7 +228,8 @@ export class WaitlistService {
     return { ok: true, message: `Invite sent to ${entry.email}` };
   }
 
-  async getStats() {
+  async getStats(adminUserId: string) {
+    await this.assertAdmin(adminUserId);
     const [total, pending, invited] = await Promise.all([
       this.prisma.waitlist.count(),
       this.prisma.waitlist.count({ where: { status: 'pending' } }),

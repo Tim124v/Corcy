@@ -13,6 +13,7 @@ import {
   Settings,
   HelpCircle,
   LogOut,
+  Shield,
 } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { DarkModeToggle } from './DarkModeToggle';
@@ -30,6 +31,7 @@ type SidebarProps = {
 export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const router = useRouter();
   const logout = useAuthStore((s) => s.logout);
+  const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const { language } = useLanguage();
   const unreadNotifications = useNotificationsStore((s) => s.items.filter((item) => !item.read).length);
@@ -65,6 +67,17 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     { icon: Send, label: language === 'en' ? 'Invites' : 'Приглашения', path: '/invites' },
     { icon: Bell, label: language === 'en' ? 'Notifications' : 'Уведомления', path: '/notifications', badge: unreadNotifications, highlight: unreadNotifications > 0 },
     { icon: Settings, label: language === 'en' ? 'Settings' : 'Настройки', path: '/settings' },
+    ...(user?.isAdmin
+      ? [
+          {
+            icon: Shield,
+            label: language === 'en' ? 'Waitlist' : 'Waitlist',
+            path: '/admin/waitlist',
+            badge: 0,
+            highlight: false,
+          },
+        ]
+      : []),
   ];
 
   const handleLogout = () => {

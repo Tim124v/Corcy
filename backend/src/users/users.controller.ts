@@ -26,7 +26,7 @@ export class UsersController {
   async me(@ReqUser() user: { id: string }) {
     const u = await this.prisma.user.findUnique({
       where: { id: user.id },
-      select: { id: true, email: true, name: true, avatarUrl: true, createdAt: true, isVerified: true },
+      select: { id: true, email: true, name: true, avatarUrl: true, createdAt: true, isVerified: true, isAdmin: true },
     });
     if (!u) throw new Error('User not found');
     return u;

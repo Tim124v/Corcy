@@ -139,6 +139,7 @@ export class AuthService {
         name: opts?.name?.trim() || null,
         passwordHash,
         isVerified: false,
+        isAdmin: isAdmin || false,
       },
       select: {
         id: true,
@@ -215,12 +216,12 @@ export class AuthService {
     res: Response,
   ): Promise<{
     ok: true;
-    user: { id: string; email: string; name: string | null; avatarUrl: string | null };
+    user: { id: string; email: string; name: string | null; avatarUrl: string | null; isAdmin: boolean };
     accessToken: string;
   }> {
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, avatarUrl: true },
+      select: { id: true, email: true, name: true, avatarUrl: true, isAdmin: true },
     });
     if (!u) throw new Error('User not found after auth');
     const pair = await this.tokens.issuePair(u.id, u.email, {
@@ -230,7 +231,7 @@ export class AuthService {
     setRefreshCookie(res, pair.refreshToken);
     return {
       ok: true,
-      user: { id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl },
+      user: { id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl, isAdmin: u.isAdmin },
       accessToken: pair.accessToken,
     };
   }

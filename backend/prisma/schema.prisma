@@ -17,6 +17,7 @@ model User {
   name         String?
   avatarUrl    String?
   isVerified   Boolean  @default(false)
+  isAdmin      Boolean  @default(false)
   registeredViaInviteId String?
   totpSecret          String?
   pendingTotpSecret   String?

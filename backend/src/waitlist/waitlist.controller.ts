@@ -35,14 +35,14 @@ export class WaitlistController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  async getList(@Query('status') status?: string) {
-    return this.waitlist.getList(status);
+  async getList(@ReqUser() user: { id: string }, @Query('status') status?: string) {
+    return this.waitlist.getList(user.id, status);
   }
 
   @Get('stats')
   @UseGuards(JwtAuthGuard)
-  async getStats() {
-    return this.waitlist.getStats();
+  async getStats(@ReqUser() user: { id: string }) {
+    return this.waitlist.getStats(user.id);
   }
 
   @Post(':id/invite')
