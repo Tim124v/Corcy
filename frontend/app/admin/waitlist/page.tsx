@@ -44,6 +44,19 @@ export default function AdminWaitlistPage() {
       router.replace('/dashboard');
       return;
     }
+
+    // Дополнительная проверка через API при каждой загрузке
+    const verifyAdmin = async () => {
+      try {
+        const me = await api<{ isAdmin?: boolean }>('/users/me');
+        if (!me.isAdmin) {
+          router.replace('/dashboard');
+        }
+      } catch {
+        router.replace('/dashboard');
+      }
+    };
+    void verifyAdmin();
   }, [hydrated, user, router]);
 
   const loadData = async () => {
