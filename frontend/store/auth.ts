@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { useNotificationsStore } from './notifications';
 import { useChatActivityStore } from './chat-activity';
 
-export type User = { id: string; email: string; name: string | null; avatarUrl?: string | null };
+export type User = { id: string; email: string; name: string | null; avatarUrl?: string | null; isAdmin?: boolean };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 

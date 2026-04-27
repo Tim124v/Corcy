@@ -17,6 +17,7 @@ model User {
   name         String?
   avatarUrl    String?
   isVerified   Boolean  @default(false)
+  isAdmin      Boolean  @default(false)
   registeredViaInviteId String?
   totpSecret          String?
   pendingTotpSecret   String?
@@ -181,4 +182,20 @@ model RateLimit {
   @@index([key])
   @@index([resetAt])
   @@map("rate_limits")
+}
+
+model Waitlist {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  reason    String?
+  status    String   @default("pending") // pending | invited | rejected
+  inviteId  String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("waitlist")
 }

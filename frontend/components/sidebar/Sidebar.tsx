@@ -13,6 +13,7 @@ import {
   Settings,
   HelpCircle,
   LogOut,
+  Shield,
 } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { DarkModeToggle } from './DarkModeToggle';
@@ -30,6 +31,7 @@ type SidebarProps = {
 export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const router = useRouter();
   const logout = useAuthStore((s) => s.logout);
+  const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const { language } = useLanguage();
   const unreadNotifications = useNotificationsStore((s) => s.items.filter((item) => !item.read).length);
@@ -65,6 +67,17 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     { icon: Send, label: language === 'en' ? 'Invites' : 'Приглашения', path: '/invites' },
     { icon: Bell, label: language === 'en' ? 'Notifications' : 'Уведомления', path: '/notifications', badge: unreadNotifications, highlight: unreadNotifications > 0 },
     { icon: Settings, label: language === 'en' ? 'Settings' : 'Настройки', path: '/settings' },
+    ...(user?.isAdmin
+      ? [
+          {
+            icon: Shield,
+            label: language === 'en' ? 'Waitlist' : 'Waitlist',
+            path: '/admin/waitlist',
+            badge: 0,
+            highlight: false,
+          },
+        ]
+      : []),
   ];
 
   const handleLogout = () => {
@@ -101,10 +114,24 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
             href="/"
             className="mb-6 flex items-center gap-2 rounded-xl px-3 py-2.5 transition hover:bg-slate-900/5 dark:hover:bg-white/5"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30">
-              <span className="text-sm font-bold">CX</span>
+            <div className="flex items-center gap-3 px-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/connexy_icon.svg"
+                alt="Connexy"
+                width={38}
+                height={38}
+                className="shrink-0 drop-shadow-[0_0_10px_rgba(99,102,241,0.7)]"
+              />
+              <div className="flex flex-col leading-tight">
+                <span className="font-bold text-slate-900 dark:text-white tracking-[0.15em] text-[15px]">
+                  CONNEXY
+                </span>
+                <span className="text-[9px] text-blue-600/70 dark:text-blue-400/70 tracking-[0.25em] uppercase font-medium">
+                  Private · Secure
+                </span>
+              </div>
             </div>
-            <span className="text-lg font-semibold text-slate-900 dark:text-white">CONNEXY</span>
           </Link>
 
           {/* Navigation */}

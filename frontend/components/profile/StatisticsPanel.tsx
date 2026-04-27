@@ -47,14 +47,14 @@ export function StatisticsPanel({
         </svg>
         {language === 'en' ? 'Statistics' : 'Статистика'}
       </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4">
         {items.map(({ label, value, color }) => (
-          <div key={label} className="rounded-2xl border border-slate-200 bg-white/75 p-4 shadow-inner shadow-slate-200/40 dark:border-white/10 dark:bg-white/[0.05] dark:shadow-white/5">
+          <div key={label} className="rounded-2xl border border-slate-200 bg-white/75 p-3 sm:p-4 shadow-inner shadow-slate-200/40 dark:border-white/10 dark:bg-white/[0.05] dark:shadow-white/5">
             <div className={`mb-2 ${color}`}>
               <MiniChart color={color} />
             </div>
-            <div className="text-3xl font-semibold text-slate-950 tabular-nums dark:text-white">{value}</div>
-            <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{label}</div>
+            <div className="text-2xl sm:text-3xl font-semibold text-slate-950 tabular-nums dark:text-white">{value}</div>
+            <div className="text-[11px] sm:text-xs uppercase tracking-[0.12em] sm:tracking-[0.18em] text-slate-500 dark:text-slate-400">{label}</div>
           </div>
         ))}
       </div>

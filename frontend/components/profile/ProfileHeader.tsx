@@ -87,7 +87,7 @@ export function ProfileHeader({
             src={avatarUrl}
             size="xl"
             online
-            className="w-28 h-28 shadow-[0_0_0_4px_rgba(255,255,255,0.95),0_0_0_8px_rgba(59,130,246,0.18),0_20px_45px_-15px_rgba(59,130,246,0.35)] dark:shadow-[0_0_0_4px_rgba(15,23,42,0.85),0_0_0_8px_rgba(59,130,246,0.35),0_20px_45px_-15px_rgba(59,130,246,0.85)]"
+            className="!w-28 !h-28 shadow-[0_0_0_4px_rgba(255,255,255,0.95),0_0_0_8px_rgba(59,130,246,0.18),0_20px_45px_-15px_rgba(59,130,246,0.35)] dark:shadow-[0_0_0_4px_rgba(15,23,42,0.85),0_0_0_8px_rgba(59,130,246,0.35),0_20px_45px_-15px_rgba(59,130,246,0.85)]"
           />
           <span
             className="absolute bottom-2 right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 dark:border-slate-950"

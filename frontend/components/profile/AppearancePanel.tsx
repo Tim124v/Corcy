@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useLanguage, type AppLanguage } from '../language-provider';
 import type { NotificationCategorySettings, NotificationType } from '../../store/notifications';
-
-const STORAGE_ACCENT = 'connexy-accent';
 
 type AppearancePanelProps = {
   theme?: 'light' | 'dark';
@@ -14,14 +12,6 @@ type AppearancePanelProps = {
   notificationCategoryEnabled?: NotificationCategorySettings;
   onNotificationCategoryToggle?: (type: NotificationType, enabled: boolean) => void;
 };
-
-const accents = [
-  { id: 'blue', label: 'Синий', class: 'bg-blue-500' },
-  { id: 'purple', label: 'Фиолетовый', class: 'bg-purple-500' },
-  { id: 'green', label: 'Зелёный', class: 'bg-emerald-500' },
-  { id: 'orange', label: 'Оранжевый', class: 'bg-orange-500' },
-  { id: 'red', label: 'Красный', class: 'bg-red-500' },
-];
 
 const languages = [
   { id: 'ru', label: 'Русский (RU)' },
@@ -90,17 +80,7 @@ export function AppearancePanel({
   },
   onNotificationCategoryToggle,
 }: AppearancePanelProps) {
-  const [accent, setAccent] = useState('blue');
   const { language, setLanguage } = useLanguage();
-
-  useEffect(() => {
-    const a = localStorage.getItem(STORAGE_ACCENT) || 'blue';
-    setAccent(a);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_ACCENT, accent);
-  }, [accent]);
 
   return (
     <section className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
@@ -133,25 +113,6 @@ export function AppearancePanel({
         </div>
 
         <div>
-          <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">{language === 'en' ? 'Accent Color' : 'Акцентный цвет'}</div>
-          <div className="flex gap-2">
-            {accents.map(({ id, label, class: c }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setAccent(id)}
-                className={`w-9 h-9 rounded-full border-2 transition ${c} ${
-                  accent === id ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-950 ring-blue-400' : 'border-slate-300 hover:opacity-90 dark:border-white/20'
-                }`}
-                title={label}
-              >
-                <span className="sr-only">{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
           <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">{language === 'en' ? 'Language' : 'Язык'}</div>
           <select
             value={language}
@@ -168,12 +129,12 @@ export function AppearancePanel({
           <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">
             {language === 'en' ? 'Notifications' : 'Уведомления'}
           </div>
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/72 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/72 p-3 dark:border-white/10 dark:bg-white/[0.04]">
             <div>
-              <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+              <div className="text-[13px] font-medium text-slate-900 dark:text-slate-100">
                 {language === 'en' ? 'Allow in-app notifications' : 'Разрешить уведомления в приложении'}
               </div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                 {notificationsEnabled
                   ? language === 'en'
                     ? 'New room, invite, and security events will appear in Connexy.'
@@ -186,15 +147,15 @@ export function AppearancePanel({
             <button
               type="button"
               onClick={() => onNotificationsToggle?.(!notificationsEnabled)}
-              className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${
+              className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition ${
                 notificationsEnabled ? 'bg-blue-500/80' : 'bg-white/10'
               }`}
               aria-pressed={notificationsEnabled}
               aria-label={language === 'en' ? 'Toggle notifications' : 'Переключить уведомления'}
             >
               <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                  notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                  notificationsEnabled ? 'translate-x-5' : 'translate-x-1'
                 }`}
               />
             </button>
@@ -207,7 +168,7 @@ export function AppearancePanel({
               return (
                 <div
                   key={category.id}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/65 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]"
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/65 p-3 dark:border-white/10 dark:bg-white/[0.03]"
                 >
                   <div className="flex items-start gap-3">
                     <span
@@ -216,10 +177,10 @@ export function AppearancePanel({
                       {notificationCategoryIcons[category.id]}
                     </span>
                     <div>
-                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <div className="text-[13px] font-medium text-slate-900 dark:text-slate-100">
                       {language === 'en' ? category.title.en : category.title.ru}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                       {language === 'en' ? category.description.en : category.description.ru}
                     </div>
                     </div>
@@ -228,15 +189,15 @@ export function AppearancePanel({
                     type="button"
                     disabled={!notificationsEnabled}
                     onClick={() => onNotificationCategoryToggle?.(category.id, !enabled)}
-                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${
+                    className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition ${
                       enabled && notificationsEnabled ? 'bg-blue-500/80' : 'bg-white/10'
                     } disabled:cursor-not-allowed disabled:opacity-60`}
                     aria-pressed={enabled && notificationsEnabled}
                     aria-label={language === 'en' ? `Toggle ${category.title.en}` : `Переключить ${category.title.ru.toLowerCase()}`}
                   >
                     <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                        enabled && notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                        enabled && notificationsEnabled ? 'translate-x-5' : 'translate-x-1'
                       }`}
                     />
                   </button>

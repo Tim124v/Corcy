@@ -183,7 +183,7 @@ export class AuthController {
       const user = stored
         ? await this.prisma.user.findUnique({
             where: { id: stored.userId },
-            select: { id: true, email: true, name: true, avatarUrl: true },
+            select: { id: true, email: true, name: true, avatarUrl: true, isAdmin: true },
           })
         : null;
 

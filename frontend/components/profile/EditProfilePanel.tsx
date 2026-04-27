@@ -89,7 +89,11 @@ export function EditProfilePanel({
               <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white/85 dark:border-white/10 dark:bg-white/[0.04]">
                 {displayAvatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={displayAvatar} alt="Profile" className="h-full w-full object-cover" />
+                  <img
+                    src={displayAvatar}
+                    alt="Profile"
+                    className="w-full h-full object-cover rounded-full"
+                  />
                 ) : (
                   <span className="text-lg font-semibold text-slate-700 dark:text-slate-200">{avatarText}</span>
                 )}

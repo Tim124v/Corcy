@@ -33,7 +33,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <button
           type="button"
           onClick={() => setSidebarOpen(true)}
-          className="fixed left-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-white shadow-lg lg:hidden"
+          className="fixed left-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/90 dark:bg-slate-800 text-white shadow-lg backdrop-blur-sm border border-white/10 lg:hidden"
           aria-label="Open menu"
         >
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

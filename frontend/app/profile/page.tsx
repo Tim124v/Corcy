@@ -67,7 +67,7 @@ export default function ProfilePage() {
   const [invites, setInvites] = useState<InviteItem[]>([]);
   const [messagesCount, setMessagesCount] = useState(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [accountStatus, setAccountStatus] = useState<'online' | 'offline' | 'connected'>('online');
+  const [accountStatus, setAccountStatus] = useState<'online' | 'offline'>('online');
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   /** Локальный черновик: data URL (новое фото), 'remove' (удалить), null (без изменений) */
   const [avatarDraft, setAvatarDraft] = useState<string | null | 'remove'>(null);
@@ -130,7 +130,7 @@ export default function ProfilePage() {
     }
     if (user) {
       const storedStatus = localStorage.getItem(`connexy-account-status:${user.id}`) as 'online' | 'offline' | 'connected' | null;
-      setAccountStatus(storedStatus === 'offline' || storedStatus === 'connected' ? storedStatus : 'online');
+      setAccountStatus(storedStatus === 'offline' ? 'offline' : 'online');
     }
     void loadProfileData();
   }, [accessToken, router, user]);
@@ -150,6 +150,7 @@ export default function ProfilePage() {
       setAuth(updated, accessToken);
       setStoredUserAvatar(user.id, updated.avatarUrl ?? null);
       setAvatarDraft(null);
+      setShowProfileEdit(false);
     } finally {
       setSaving(false);
     }
@@ -159,8 +160,9 @@ export default function ProfilePage() {
 
   const updateAccountStatus = (next: 'online' | 'offline' | 'connected') => {
     if (!user) return;
-    setAccountStatus(next);
-    localStorage.setItem(`connexy-account-status:${user.id}`, next);
+    const normalized: 'online' | 'offline' = next === 'offline' ? 'offline' : 'online';
+    setAccountStatus(normalized);
+    localStorage.setItem(`connexy-account-status:${user.id}`, normalized);
   };
 
   const setProfilePhotoDraft = (file: File | null) => {
@@ -223,7 +225,7 @@ export default function ProfilePage() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-            <section className="app-shell-card rounded-[24px] p-6">
+            <section className="app-shell-card rounded-[24px] p-4 sm:p-6">
               <h2 className="mb-4 text-lg font-semibold text-slate-950 dark:text-white">{language === 'en' ? 'Account Overview' : 'Обзор аккаунта'}</h2>
               <div className="space-y-3">
                 <div className="app-shell-muted rounded-xl px-4 py-3">

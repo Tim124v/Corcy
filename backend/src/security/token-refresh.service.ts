@@ -26,7 +26,14 @@ export class TokenRefreshService {
     email: string,
     opts?: { ipAddress?: string; userAgent?: string },
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const accessToken = this.jwt.sign({ sub: userId, email }, { expiresIn: this.accessExpires() });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isAdmin: true },
+    });
+    const accessToken = this.jwt.sign(
+      { sub: userId, email, isAdmin: user?.isAdmin ?? false },
+      { expiresIn: this.accessExpires() },
+    );
     const rawRefresh = randomBytes(64).toString('hex');
     const tokenHash = createHash('sha256').update(rawRefresh).digest('hex');
     const expiresAt = new Date(Date.now() + this.refreshDays() * 24 * 60 * 60 * 1000);
