@@ -227,6 +227,7 @@ function DashboardInner() {
   );
   const isEn = language === 'en';
   const isDarkTheme = theme === 'dark';
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const selectedDirectPhoto = selected?.user.avatarUrl || (selected?.user.id && selected?.user.id === user?.id ? profilePhoto : null);
   const filteredConnections = useMemo(() => {
     if (!search.trim()) return connections;
@@ -264,6 +265,10 @@ function DashboardInner() {
       .then(setRooms)
       .catch(() => setRooms([]));
   }, [accessToken, router, hydrated]);
+
+  useEffect(() => {
+    if (!selected && !selectedRoom) setMobileView('list');
+  }, [selected, selectedRoom]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60000);
@@ -739,7 +744,7 @@ function DashboardInner() {
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1360px] flex-col gap-4 px-4 py-5 lg:px-6">
-        <div className={`hidden items-center gap-3 rounded-[30px] px-6 py-4 backdrop-blur-xl md:flex ${
+        <div className={`hidden items-center gap-3 rounded-[30px] px-6 py-4 backdrop-blur-xl lg:flex ${
           isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.04)]'
             : 'bg-white/85 shadow-[0_18px_40px_-30px_rgba(148,163,184,0.45)]'
@@ -755,9 +760,9 @@ function DashboardInner() {
           />
         </div>
 
-        <div className="grid min-h-[calc(100vh-7.5rem)] grid-cols-1 gap-5 md:grid-cols-[352px,1fr]">
+        <div className="grid min-h-[calc(100vh-7.5rem)] grid-cols-1 gap-5 lg:grid-cols-[352px,1fr]">
         {/* Mobile header */}
-        <div className={`flex items-center justify-between rounded-2xl p-3 backdrop-blur md:hidden ${
+        <div className={`flex items-center justify-between rounded-2xl p-3 backdrop-blur lg:hidden ${
           isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8)]'
             : 'bg-white/85 shadow-[0_18px_40px_-30px_rgba(148,163,184,0.45)]'
@@ -786,11 +791,15 @@ function DashboardInner() {
         </div>
 
         {/* Chats list */}
-        <section className={`flex flex-col overflow-hidden rounded-[34px] p-4 backdrop-blur-xl ${
-          isDarkTheme
+        <section className={`
+          w-full lg:w-[352px] flex-shrink-0
+          ${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'}
+          flex-col overflow-hidden rounded-[34px] p-4 backdrop-blur-xl
+          ${isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
             : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
-        } ${(selected || selectedRoom) ? 'hidden md:flex' : 'flex'}`}>
+          }
+        `}>
           <div className={`flex min-h-full flex-col rounded-[28px] p-4 ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-50/60'}`}>
             <div className={`mb-5 flex items-center gap-3 rounded-[20px] px-4 py-3.5 ${
               isDarkTheme
@@ -827,6 +836,7 @@ function DashboardInner() {
                               setSelected(c);
                               setSelectedRoom(null);
                               markDirectAsRead(c.user.id);
+                              if (typeof window !== 'undefined' && window.innerWidth < 1024) setMobileView('chat');
                             }}
                             className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${
                               selected?.id === c.id
@@ -969,6 +979,7 @@ function DashboardInner() {
                               setSelected(null);
                               setSelectedRoom(r);
                               markRoomAsRead(r.id);
+                              if (typeof window !== 'undefined' && window.innerWidth < 1024) setMobileView('chat');
                             }}
                             className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${
                               selectedRoom?.id === r.id
@@ -1010,11 +1021,15 @@ function DashboardInner() {
         </section>
 
         {/* Chat panel */}
-        <section className={`relative flex flex-col overflow-hidden rounded-[34px] backdrop-blur-2xl min-h-[560px] max-h-[calc(100vh-5rem)] ${
-          isDarkTheme
+        <section className={`
+          relative flex-1 flex-col
+          ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}
+          overflow-hidden rounded-[34px] backdrop-blur-2xl min-h-[560px] max-h-[calc(100vh-5rem)]
+          ${isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
             : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
-        } ${(selected || selectedRoom) ? 'flex' : 'hidden md:flex'}`}>
+          }
+        `}>
           {selected || selectedRoom ? (
             <div className={`mx-auto flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[28px] ${isDarkTheme ? 'bg-slate-950/56' : 'bg-slate-50/62'}`}>
               <div className={`flex shrink-0 items-center gap-4 px-7 py-6 ${
@@ -1025,11 +1040,13 @@ function DashboardInner() {
                 {(selected || selectedRoom) && (
                   <button
                     type="button"
-                    onClick={() => { setSelected(null); setSelectedRoom(null); }}
-                    className="md:hidden flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900/6 text-slate-900 hover:bg-slate-900/10 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
+                    onClick={() => setMobileView('list')}
+                    className="mr-2 flex items-center justify-center rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
                     aria-label="Назад к списку"
                   >
-                    ←
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+                    </svg>
                   </button>
                 )}
                 {selectedRoom ? (

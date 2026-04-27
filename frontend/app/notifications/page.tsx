@@ -42,7 +42,7 @@ export default function NotificationsPage() {
         <div className="absolute right-8 top-10 h-48 w-48 rounded-full bg-indigo-500/15 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto max-w-5xl px-4 py-8 md:px-6 md:py-10">
+      <div className="relative mx-auto max-w-2xl px-4 py-8 md:px-6 md:py-10">
         <header className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.28em] text-slate-500">

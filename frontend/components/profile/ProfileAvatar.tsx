@@ -19,11 +19,15 @@ export function ProfileAvatar({ src, alt = '', initials = '?', size = 'lg', clas
 
   if (src) {
     return (
-      <img
-        src={src}
-        alt={alt}
-        className={`rounded-full object-cover ring-2 ring-white/20 dark:ring-slate-600 shadow-xl ${sizeClass} ${className}`}
-      />
+      <div
+        className={`rounded-full overflow-hidden ring-2 ring-white/20 dark:ring-slate-600 shadow-xl ${sizeClass} ${className}`}
+      >
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover rounded-full"
+        />
+      </div>
     );
   }
 

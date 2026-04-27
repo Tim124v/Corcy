@@ -51,10 +51,12 @@ export function Avatar({ name, src, size = 'md', online, className }: AvatarProp
   }, [display]);
 
   return (
-    <div className={cn('relative flex-shrink-0', className)}>
+    <div className={cn('relative flex-shrink-0 rounded-full', className)}>
       {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={display} className={cn(SIZE_CLASSES[size], 'rounded-full object-cover')} />
+        <div className={cn('w-full h-full rounded-full overflow-hidden')}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt={display} className="w-full h-full object-cover rounded-full" />
+        </div>
       ) : (
         <div
           className={cn(
