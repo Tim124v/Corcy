@@ -762,7 +762,7 @@ function DashboardInner() {
 
         <div className="grid min-h-[calc(100vh-7.5rem)] grid-cols-1 gap-5 lg:grid-cols-[352px,1fr]">
         {/* Mobile header */}
-        <div className={`flex items-center justify-between rounded-2xl p-3 backdrop-blur lg:hidden ${
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3 backdrop-blur lg:hidden ${
           isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8)]'
             : 'bg-white/85 shadow-[0_18px_40px_-30px_rgba(148,163,184,0.45)]'
@@ -780,11 +780,17 @@ function DashboardInner() {
               <div className="text-[11px] text-slate-500 dark:text-slate-400">{isEn ? 'Online' : 'Онлайн'}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <Link href="/profile" className="rounded-full bg-slate-900/5 px-3 py-1 text-slate-700 transition hover:bg-slate-900/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/profile"
+              className="rounded-full bg-slate-900/5 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-900/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:px-3 sm:py-1.5 sm:text-sm"
+            >
               {isEn ? 'Profile' : 'Профиль'}
             </Link>
-            <button onClick={() => logout()} className="rounded-full bg-rose-500/8 px-3 py-1 text-rose-200 hover:bg-rose-500/12 transition">
+            <button
+              onClick={() => logout()}
+              className="rounded-full bg-rose-500/8 px-2 py-1 text-xs text-rose-200 transition hover:bg-rose-500/12 sm:px-3 sm:py-1.5 sm:text-sm"
+            >
               {isEn ? 'Logout' : 'Выход'}
             </button>
           </div>
