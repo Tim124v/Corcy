@@ -129,12 +129,12 @@ export function AppearancePanel({
           <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">
             {language === 'en' ? 'Notifications' : 'Уведомления'}
           </div>
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/72 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/72 p-3 dark:border-white/10 dark:bg-white/[0.04]">
             <div>
-              <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+              <div className="text-[13px] font-medium text-slate-900 dark:text-slate-100">
                 {language === 'en' ? 'Allow in-app notifications' : 'Разрешить уведомления в приложении'}
               </div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                 {notificationsEnabled
                   ? language === 'en'
                     ? 'New room, invite, and security events will appear in Connexy.'
@@ -147,15 +147,15 @@ export function AppearancePanel({
             <button
               type="button"
               onClick={() => onNotificationsToggle?.(!notificationsEnabled)}
-              className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${
+              className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition ${
                 notificationsEnabled ? 'bg-blue-500/80' : 'bg-white/10'
               }`}
               aria-pressed={notificationsEnabled}
               aria-label={language === 'en' ? 'Toggle notifications' : 'Переключить уведомления'}
             >
               <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                  notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                  notificationsEnabled ? 'translate-x-5' : 'translate-x-1'
                 }`}
               />
             </button>
@@ -168,7 +168,7 @@ export function AppearancePanel({
               return (
                 <div
                   key={category.id}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/65 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]"
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/65 p-3 dark:border-white/10 dark:bg-white/[0.03]"
                 >
                   <div className="flex items-start gap-3">
                     <span
@@ -177,10 +177,10 @@ export function AppearancePanel({
                       {notificationCategoryIcons[category.id]}
                     </span>
                     <div>
-                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <div className="text-[13px] font-medium text-slate-900 dark:text-slate-100">
                       {language === 'en' ? category.title.en : category.title.ru}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                       {language === 'en' ? category.description.en : category.description.ru}
                     </div>
                     </div>
@@ -189,15 +189,15 @@ export function AppearancePanel({
                     type="button"
                     disabled={!notificationsEnabled}
                     onClick={() => onNotificationCategoryToggle?.(category.id, !enabled)}
-                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${
+                    className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full transition ${
                       enabled && notificationsEnabled ? 'bg-blue-500/80' : 'bg-white/10'
                     } disabled:cursor-not-allowed disabled:opacity-60`}
                     aria-pressed={enabled && notificationsEnabled}
                     aria-label={language === 'en' ? `Toggle ${category.title.en}` : `Переключить ${category.title.ru.toLowerCase()}`}
                   >
                     <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                        enabled && notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                        enabled && notificationsEnabled ? 'translate-x-5' : 'translate-x-1'
                       }`}
                     />
                   </button>

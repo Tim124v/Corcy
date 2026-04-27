@@ -225,7 +225,7 @@ export default function ProfilePage() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-            <section className="app-shell-card rounded-[24px] p-6">
+            <section className="app-shell-card rounded-[24px] p-4 sm:p-6">
               <h2 className="mb-4 text-lg font-semibold text-slate-950 dark:text-white">{language === 'en' ? 'Account Overview' : 'Обзор аккаунта'}</h2>
               <div className="space-y-3">
                 <div className="app-shell-muted rounded-xl px-4 py-3">
