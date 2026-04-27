@@ -145,8 +145,8 @@ function EncryptionAnimation() {
         <div className="pointer-events-none absolute bottom-3 left-3 h-3 w-3 rounded-bl-lg border-b border-l border-violet-500/30" />
         <div className="pointer-events-none absolute bottom-3 right-3 h-3 w-3 rounded-br-lg border-b border-r border-violet-500/30" />
       </div>
-      <p className="mt-4 text-center text-[11px] text-slate-500 tracking-widest uppercase">
-        End-to-end encrypted · Zero knowledge
+      <p className="mt-4 text-center text-[10px] text-slate-500 tracking-wider uppercase leading-relaxed">
+        End-to-end encrypted<br />Zero knowledge
       </p>
     </div>
   );
@@ -230,7 +230,7 @@ export default function LandingPage() {
         </div>
 
         {/* ── HERO ── */}
-        <section className="relative flex flex-1 flex-col items-center justify-center px-4 py-12 text-center">
+        <section className="relative flex flex-1 flex-col items-center justify-center px-6 py-8 text-center">
 
           {/* Логотип с пульсирующим свечением */}
           <div className="fade-up-1 mb-6">
@@ -238,14 +238,14 @@ export default function LandingPage() {
             <img
               src="/connexy_icon.svg"
               alt="Connexy"
-              width={90}
-              height={90}
-              className="logo-glow"
+              width={70}
+              height={70}
+              className="logo-glow sm:w-[90px] sm:h-[90px]"
             />
           </div>
 
           {/* Заголовок */}
-          <h1 className="fade-up-2 text-5xl font-bold tracking-[0.35em] text-white sm:text-6xl lg:text-7xl">
+          <h1 className="fade-up-2 text-4xl font-bold tracking-[0.2em] text-white sm:text-5xl sm:tracking-[0.35em] lg:text-7xl">
             CONNEXY
           </h1>
 
@@ -280,13 +280,18 @@ export default function LandingPage() {
               <span className="relative z-10">Sign In →</span>
               <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-blue-600 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
             </button>
+
             <button
               type="button"
-              onClick={() => router.push('/auth/no-invite')}
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              onClick={() => router.push('/waitlist')}
+              className="rounded-full border border-white/10 bg-white/5 px-8 py-2.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all duration-200 backdrop-blur-sm"
             >
-              No account? You need an invitation →
+              Request Access
             </button>
+
+            <p className="text-xs text-slate-600">
+              Invite only · Private by design
+            </p>
           </div>
         </section>
 
@@ -306,7 +311,7 @@ export default function LandingPage() {
                 Your messages are protected
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                AES-256-GCM encryption · Keys only with you
+                AES-256-GCM encryption · Your keys, your data
               </p>
             </div>
             <EncryptionAnimation />

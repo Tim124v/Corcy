@@ -60,6 +60,14 @@ export default function NoInvitePage() {
             Уже есть аккаунт? Войти
           </Link>
           <Link
+            href="/waitlist"
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600
+              hover:from-blue-500 hover:to-violet-500
+              text-white text-sm font-medium transition-colors text-center"
+          >
+            Join the Waitlist →
+          </Link>
+          <Link
             href="/"
             className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10
               border border-white/8 text-white/60 text-sm transition-colors text-center"
