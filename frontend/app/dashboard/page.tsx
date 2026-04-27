@@ -324,7 +324,7 @@ function DashboardInner() {
           messagesCacheRef.current.direct[peerId] = data;
         })
         .catch(() => {});
-    }, 1000);
+    }, 20000);
     return () => clearInterval(id);
   }, [selected]);
 
@@ -356,7 +356,7 @@ function DashboardInner() {
           messagesCacheRef.current.rooms[roomId] = data;
         })
         .catch(() => {});
-    }, 1000);
+    }, 20000);
     return () => clearInterval(id);
   }, [selectedRoom]);
 
@@ -1307,7 +1307,7 @@ function DashboardInner() {
                       </button>
                     </div>
                   )}
-                  <div className="relative flex items-center gap-3 rounded-[24px] bg-white/96 px-4 py-3.5 text-slate-900 shadow-[0_16px_34px_-24px_rgba(148,163,184,0.34)] dark:bg-slate-950/40 dark:text-slate-50 dark:shadow-[0_18px_36px_-26px_rgba(0,0,0,0.58)]">
+                  <div className="relative flex flex-wrap items-center gap-2 rounded-[24px] bg-white/96 px-4 py-3.5 text-slate-900 shadow-[0_16px_34px_-24px_rgba(148,163,184,0.34)] dark:bg-slate-950/40 dark:text-slate-50 dark:shadow-[0_18px_36px_-26px_rgba(0,0,0,0.58)]">
                     <div ref={attachMenuRef} className="relative">
                       <button
                         type="button"
@@ -1348,7 +1348,7 @@ function DashboardInner() {
                     </div>
 
                     <input
-                      className="flex-1 bg-transparent text-[15px] placeholder:text-slate-500 outline-none"
+                      className="min-w-0 flex-1 bg-transparent text-[15px] placeholder:text-slate-500 outline-none"
                       value={messageText}
                       onChange={(e) => {
                         setMessageText(e.target.value);
@@ -1360,7 +1360,10 @@ function DashboardInner() {
                       placeholder={isRoomChat ? (isEn ? 'Message to room...' : 'Сообщение в комнату...') : (isEn ? 'Message...' : 'Сообщение...')}
                     />
 
-                    <Button type="submit" className="h-12 rounded-full px-6 text-sm font-semibold">
+                    <Button
+                      type="submit"
+                      className="h-10 shrink-0 rounded-full px-3 text-xs font-semibold sm:h-12 sm:px-6 sm:text-sm"
+                    >
                       {isEn ? 'Send' : 'Отправить'}
                     </Button>
                   </div>
