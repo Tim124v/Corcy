@@ -136,6 +136,16 @@ export class WaitlistService {
     reason?: string;
     ipAddress?: string;
   }) {
+    if (data.ipAddress) {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recentFromIp = await this.prisma.waitlist.count({
+        where: { ipAddress: data.ipAddress, createdAt: { gte: oneDayAgo } },
+      });
+      if (recentFromIp >= 3) {
+        return { ok: false, error: 'Too many requests from this IP. Try again tomorrow.' };
+      }
+    }
+
     const email = data.email.toLowerCase().trim();
 
     const existing = await this.prisma.waitlist.findUnique({ where: { email } });

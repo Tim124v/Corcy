@@ -10,7 +10,6 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './modules/app.module.js';
 import { ConfigService } from '@nestjs/config';
-import { existsSync, mkdirSync } from 'fs';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { json, urlencoded } from 'express';
 import cookieParser from 'cookie-parser';
@@ -53,7 +52,7 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin, cb) => {
       // origin может быть undefined (например, curl/Postman) — разрешаем
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, isDev);
       return cb(null, corsOrigins.has(origin));
     },
     credentials: true,
@@ -61,8 +60,8 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  app.use(json({ limit: '10mb' }));
-  app.use(urlencoded({ extended: true, limit: '10mb' }));
+  app.use(json({ limit: '512kb' }));
+  app.use(urlencoded({ extended: true, limit: '512kb' }));
   app.use(cookieParser());
   app.use(
     helmet({
@@ -106,11 +105,6 @@ async function bootstrap() {
   app.getHttpAdapter().get('/health', (_req: unknown, res: unknown) =>
     (res as { json: (body: unknown) => void }).json({ status: 'ok', timestamp: new Date().toISOString() }),
   );
-
-  const uploadsDir = join(process.cwd(), 'uploads');
-  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-  // serve uploaded files
-  app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
 
   await app.listen(port);
   // eslint-disable-next-line no-console

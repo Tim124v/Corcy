@@ -330,8 +330,16 @@ export class AuthService {
         totpEnabled: true,
       },
     });
-    if (!user || !(await verifyPassword(password, user.passwordHash)))
+    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      await this.audit
+        .log({
+          action: 'LOGIN_FAILED',
+          severity: 'MEDIUM',
+          metadata: { email: emailNorm },
+        })
+        .catch(() => {});
       return { ok: false, error: 'Invalid email or password' };
+    }
     if (!user.isVerified)
       return { ok: false, error: 'Please verify your email first. Check the code we sent you.' };
 

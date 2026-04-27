@@ -37,6 +37,17 @@ export class UsersController {
     if (body.avatarUrl !== undefined && body.avatarUrl !== null && typeof body.avatarUrl !== 'string') {
       throw new BadRequestException('avatarUrl must be a string or null');
     }
+    if (body.avatarUrl && body.avatarUrl.startsWith('data:')) {
+      throw new BadRequestException('avatarUrl must be a URL, not a data URI');
+    }
+    if (body.avatarUrl && body.avatarUrl.length > 2048) {
+      throw new BadRequestException('avatarUrl too long');
+    }
+
+    if (body.name !== undefined && body.name !== null) {
+      if (body.name.length > 50) throw new BadRequestException('name too long');
+      body.name = body.name.trim();
+    }
     const u = await this.prisma.user.update({
       where: { id: user.id },
       data: {
