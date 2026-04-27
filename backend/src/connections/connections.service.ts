@@ -442,8 +442,31 @@ export class ConnectionsService {
     const idB = userId;
     const [uid1, uid2] = idA < idB ? [idA, idB] : [idB, idA];
 
-    await this.prisma.$transaction([
-      this.prisma.invite.update({
+    // Не создавать связь если пригласивший — admin
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: invite.fromUserId },
+      select: { isAdmin: true },
+    });
+
+    if (!inviter?.isAdmin) {
+      await this.prisma.$transaction([
+        this.prisma.invite.update({
+          where: { id: invite.id },
+          data: {
+            usedCount: { increment: 1 },
+            usedAt: invite.usedAt ?? new Date(),
+            usedById: userId,
+            isActive: nextUsed < maxU,
+          },
+        }),
+        this.prisma.connection.upsert({
+          where: { userIdA_userIdB: { userIdA: uid1, userIdB: uid2 } },
+          create: { userIdA: uid1, userIdB: uid2 },
+          update: {},
+        }),
+      ]);
+    } else {
+      await this.prisma.invite.update({
         where: { id: invite.id },
         data: {
           usedCount: { increment: 1 },
@@ -451,13 +474,8 @@ export class ConnectionsService {
           usedById: userId,
           isActive: nextUsed < maxU,
         },
-      }),
-      this.prisma.connection.upsert({
-        where: { userIdA_userIdB: { userIdA: uid1, userIdB: uid2 } },
-        create: { userIdA: uid1, userIdB: uid2 },
-        update: {},
-      }),
-    ]);
+      });
+    }
 
     await this.audit.log({
       userId,
