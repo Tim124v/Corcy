@@ -15,6 +15,7 @@ interface InviteInfo {
     avatarUrl: string | null;
     memberSince: string;
   };
+  isAdminInvite?: boolean;
 }
 
 function getInitials(name: string | null, email: string): string {
@@ -171,12 +172,20 @@ export default function InvitePage() {
             const { fromUser, expiresAt } = info;
             const gradient = getGradient(fromUser.email);
             const initials = getInitials(fromUser.name, fromUser.email);
+            const isAdminInvite = info.isAdminInvite === true;
             const isAccepting = state.stage === 'accepting';
 
             return (
               <div className="flex flex-col items-center text-center gap-6">
                 <div className="relative">
-                  {fromUser.avatarUrl ? (
+                  {isAdminInvite ? (
+                    <div
+                      className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-600 to-violet-600
+                      flex items-center justify-center ring-2 ring-white/10"
+                    >
+                      <img src="/connexy_favicon.svg" alt="Connexy" className="w-10 h-10" />
+                    </div>
+                  ) : fromUser.avatarUrl ? (
                     <img
                       src={fromUser.avatarUrl}
                       alt={fromUser.name || fromUser.email}
@@ -196,7 +205,11 @@ export default function InvitePage() {
 
                 <div>
                   <h1 className="text-white text-xl font-semibold">
-                    {fromUser.name ? `${fromUser.name} приглашает тебя` : 'Тебя приглашают'}
+                    {isAdminInvite
+                      ? 'Connexy приглашает тебя'
+                      : fromUser.name
+                        ? `${fromUser.name} приглашает тебя`
+                        : 'Тебя приглашают'}
                   </h1>
                   <p className="text-white/50 text-sm mt-1">
                     присоединиться к приватному чату в Connexy
@@ -205,7 +218,11 @@ export default function InvitePage() {
 
                 <div className="w-full bg-white/5 border border-white/8 rounded-xl p-4 text-left">
                   <div className="flex items-center gap-3">
-                    {fromUser.avatarUrl ? (
+                    {isAdminInvite ? (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center">
+                        <img src="/connexy_favicon.svg" alt="Connexy" className="w-5 h-5" />
+                      </div>
+                    ) : fromUser.avatarUrl ? (
                       <img
                         src={fromUser.avatarUrl}
                         alt=""
@@ -221,10 +238,12 @@ export default function InvitePage() {
                     )}
                     <div>
                       <p className="text-white text-sm font-medium">
-                        {fromUser.name || fromUser.email}
+                        {isAdminInvite ? 'Connexy' : (fromUser.name || fromUser.email)}
                       </p>
                       <p className="text-white/40 text-xs">
-                        На платформе с {formatMemberSince(fromUser.memberSince)}
+                        {isAdminInvite
+                          ? 'Приватная платформа для общения'
+                          : `На платформе с ${formatMemberSince(fromUser.memberSince)}`}
                       </p>
                     </div>
                   </div>

@@ -366,6 +366,7 @@ export class ConnectionsService {
             email: true,
             avatarUrl: true,
             createdAt: true,
+            isAdmin: true,
           },
         },
       },
@@ -384,18 +385,27 @@ export class ConnectionsService {
       throw new BadRequestException('Приглашение уже использовано');
     }
 
-    // Возвращаем только публичную информацию — без токена и хешей
+    const isAdminInvite = invite.fromUser.isAdmin === true;
+
     return {
       ok: true,
       invite: {
         id: invite.id,
         expiresAt: invite.expiresAt,
-        fromUser: {
-          name: invite.fromUser.name,
-          email: invite.fromUser.email,
-          avatarUrl: invite.fromUser.avatarUrl,
-          memberSince: invite.fromUser.createdAt,
-        },
+        isAdminInvite,
+        fromUser: isAdminInvite
+          ? {
+              name: 'Connexy',
+              email: '',
+              avatarUrl: null,
+              memberSince: invite.fromUser.createdAt,
+            }
+          : {
+              name: invite.fromUser.name,
+              email: invite.fromUser.email,
+              avatarUrl: invite.fromUser.avatarUrl,
+              memberSince: invite.fromUser.createdAt,
+            },
       },
     };
   }
