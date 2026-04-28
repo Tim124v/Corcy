@@ -71,6 +71,7 @@ export default function ProfilePage() {
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   /** Локальный черновик: data URL (новое фото), 'remove' (удалить), null (без изменений) */
   const [avatarDraft, setAvatarDraft] = useState<string | null | 'remove'>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const profilePhoto = useCurrentUserAvatar(user?.id, user?.avatarUrl);
   /** Для отображения: черновик или сохранённый аватар */
   const displayAvatar = avatarDraft === 'remove' ? null : (avatarDraft ?? profilePhoto);
@@ -165,17 +166,41 @@ export default function ProfilePage() {
     localStorage.setItem(`connexy-account-status:${user.id}`, normalized);
   };
 
-  const setProfilePhotoDraft = (file: File | null) => {
+  const setProfilePhotoDraft = async (file: File | null) => {
     if (!file) {
       setAvatarDraft(null);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : null;
-      setAvatarDraft(result);
-    };
-    reader.readAsDataURL(file);
+
+    if (!accessToken) return;
+
+    setAvatarUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const res = await fetch(`${apiUrl}/messages/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `Upload failed (${res.status})`);
+      }
+
+      const data = await (res.json() as Promise<{ url: string }>);
+      setAvatarDraft(data.url);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Avatar upload error:', err);
+    } finally {
+      setAvatarUploading(false);
+    }
   };
 
   if (!user) return null;
@@ -267,7 +292,7 @@ export default function ProfilePage() {
       <EditProfilePanel
         open={showProfileEdit}
         language={language}
-        saving={saving}
+        saving={saving || avatarUploading}
         name={name}
         setName={setName}
         userEmail={user.email}
@@ -278,7 +303,7 @@ export default function ProfilePage() {
         onClose={() => setShowProfileEdit(false)}
         onLogout={logout}
         onSubmit={save}
-        onUploadPhoto={setProfilePhotoDraft}
+        onUploadPhoto={(file) => void setProfilePhotoDraft(file)}
         onRemovePhoto={() => setAvatarDraft('remove')}
       />
     </main>
