@@ -8,16 +8,27 @@ import { connectSocket } from '../store/socket';
 function playSound() {
   try {
     const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    osc.type = 'sine';
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.3);
+
+    // Звук похожий на iOS уведомление — два тона
+    const times = [0, 0.1];
+    const freqs = [1046, 1318]; // C6 и E6
+
+    times.forEach((startTime, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.frequency.value = freqs[i]!;
+      osc.type = 'sine';
+
+      gain.gain.setValueAtTime(0, ctx.currentTime + startTime);
+      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTime + 0.3);
+
+      osc.start(ctx.currentTime + startTime);
+      osc.stop(ctx.currentTime + startTime + 0.3);
+    });
   } catch {}
 }
 
