@@ -1,32 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { getAccessToken } from '../store/auth';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-// Синглтон сокета — живёт вне React, не уничтожается при Fast Refresh
-let _socket: Socket | null = null;
-
-function getOrCreateSocket(token: string): Socket {
-  if (_socket && _socket.connected) {
-    return _socket;
-  }
-  if (_socket) {
-    _socket.disconnect();
-    _socket = null;
-  }
-  _socket = io(API_URL, {
-    auth: { token },
-    transports: ['polling', 'websocket'],
-    reconnection: true,
-    reconnectionAttempts: 10,
-    reconnectionDelay: 2000,
-    timeout: 20000,
-  });
-  return _socket;
-}
+import { getSocket } from '../store/socket';
 
 type MessageHandler = (data: unknown) => void;
 
@@ -38,59 +13,38 @@ export function useSocket(handlers: {
 }) {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
-  const listenersAttached = useRef(false);
 
   const joinRoom = useCallback((roomId: string) => {
-    _socket?.emit('joinRoom', { roomId });
+    getSocket()?.emit('joinRoom', { roomId });
   }, []);
 
   const leaveRoom = useCallback((roomId: string) => {
-    _socket?.emit('leaveRoom', { roomId });
+    getSocket()?.emit('leaveRoom', { roomId });
   }, []);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) return;
+    const socket = getSocket();
+    if (!socket) return;
 
-    const socket = getOrCreateSocket(token);
+    const onConnect = () => handlersRef.current.onConnect?.();
+    const onDisconnect = (reason: string) => handlersRef.current.onDisconnect?.();
+    const onNewDirectMessage = (data: unknown) => handlersRef.current.onNewDirectMessage?.(data);
+    const onNewRoomMessage = (data: unknown) => handlersRef.current.onNewRoomMessage?.(data);
 
-    // Вешаем обработчики только один раз
-    if (!listenersAttached.current) {
-      listenersAttached.current = true;
+    if (handlersRef.current.onConnect) socket.on('connect', onConnect);
+    if (handlersRef.current.onDisconnect) socket.on('disconnect', onDisconnect);
+    if (handlersRef.current.onNewDirectMessage) socket.on('newDirectMessage', onNewDirectMessage);
+    if (handlersRef.current.onNewRoomMessage) socket.on('newRoomMessage', onNewRoomMessage);
 
-      socket.on('connect', () => {
-        // eslint-disable-next-line no-console
-        console.log('[WS] Connected:', socket.id);
-        handlersRef.current.onConnect?.();
-      });
+    if (socket.connected) handlersRef.current.onConnect?.();
 
-      socket.on('connect_error', (err) => {
-        // eslint-disable-next-line no-console
-        console.log('[WS] Connect error:', err.message);
-      });
-
-      socket.on('disconnect', (reason) => {
-        // eslint-disable-next-line no-console
-        console.log('[WS] Disconnected:', reason);
-        handlersRef.current.onDisconnect?.();
-      });
-
-      socket.on('newDirectMessage', (data: unknown) => {
-        handlersRef.current.onNewDirectMessage?.(data);
-      });
-
-      socket.on('newRoomMessage', (data: unknown) => {
-        handlersRef.current.onNewRoomMessage?.(data);
-      });
-    }
-
-    // Если уже подключены — сразу вызвать onConnect
-    if (socket.connected) {
-      handlersRef.current.onConnect?.();
-    }
-
-    // НЕ отключаем сокет при размонтировании — он живёт как синглтон
-    return () => {};
+    return () => {
+      // Не отключаем — синглтон управляется через SocketProvider
+      if (handlersRef.current.onConnect) socket.off('connect', onConnect);
+      if (handlersRef.current.onDisconnect) socket.off('disconnect', onDisconnect);
+      if (handlersRef.current.onNewDirectMessage) socket.off('newDirectMessage', onNewDirectMessage);
+      if (handlersRef.current.onNewRoomMessage) socket.off('newRoomMessage', onNewRoomMessage);
+    };
   }, []); // Только при монтировании
 
   return { joinRoom, leaveRoom };
