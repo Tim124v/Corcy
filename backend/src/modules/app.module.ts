@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, Reflector } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule, getOptionsToken, getStorageToken } from '@nestjs/throttler';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { UsersModule } from '../users/users.module.js';
@@ -29,10 +29,11 @@ import { ChatModule } from '../chat/chat.module.js';
     ChatModule,
   ],
   providers: [
-    Reflector,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useFactory: (options: unknown, storage: unknown) =>
+        new ThrottlerGuard(options as never, storage as never, new Reflector()),
+      inject: [getOptionsToken(), getStorageToken()],
     },
   ],
 })

@@ -10,12 +10,14 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 
+const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim());
+
 @WebSocketGateway({
-  cors: {
-    origin: process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()) || ['http://localhost:3000'],
-    credentials: true,
-  },
+  cors: { origin: corsOrigins, credentials: true },
   transports: ['websocket', 'polling'],
+  namespace: '/',
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -30,39 +32,37 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       // Получаем токен из handshake
       const token =
-        (client.handshake.auth as { token?: string } | undefined)?.token ||
-        (client.handshake.headers?.authorization as string | undefined)?.replace('Bearer ', '');
+        (client.handshake.auth as Record<string, string>)?.token ||
+        client.handshake.headers?.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        client.disconnect();
-        return;
+        client.disconnect(); return;
       }
 
-      const payload = this.jwt.verify<{ sub: string; email: string }>(token, {
+      const payload = this.jwt.verify<{ sub: string }>(token, {
         secret: process.env.JWT_SECRET,
       });
 
-      const userId = payload.sub;
-      client.data.userId = userId;
+      client.data.userId = payload.sub;
 
       // Добавляем сокет в map
-      if (!this.userSockets.has(userId)) {
-        this.userSockets.set(userId, new Set());
+      if (!this.userSockets.has(payload.sub)) {
+        this.userSockets.set(payload.sub, new Set());
       }
-      this.userSockets.get(userId)!.add(client.id);
+      this.userSockets.get(payload.sub)!.add(client.id);
 
       // Присоединяем к личной комнате пользователя
-      await client.join(`user:${userId}`);
+      await client.join(`user:${payload.sub}`);
 
       // eslint-disable-next-line no-console
-      console.log(`[WS] Connected: ${userId} (${client.id})`);
+      console.log(`[WS] Connected: ${payload.sub} (${client.id})`);
     } catch {
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket) {
-    const userId = client.data.userId as string | undefined;
+    const userId = client.data?.userId as string | undefined;
     if (userId) {
       const sockets = this.userSockets.get(userId);
       if (sockets) {
@@ -72,8 +72,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }
     }
-    // eslint-disable-next-line no-console
-    console.log(`[WS] Disconnected: ${client.id}`);
   }
 
   // Присоединиться к комнате
