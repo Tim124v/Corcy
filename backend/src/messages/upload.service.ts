@@ -47,21 +47,30 @@ export class UploadService {
     const resourceType =
       mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') || mimeType.startsWith('audio/') ? 'video' : 'raw';
 
-    const url = await new Promise<string>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: resourceType,
-          folder: 'connexy',
-          use_filename: false,
-          unique_filename: true,
-        },
-        (error, result) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'));
-          resolve(result.secure_url);
-        },
-      );
-      stream.end(buffer);
-    });
+    let url: string;
+    try {
+      url = await new Promise<string>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: resourceType,
+            folder: 'connexy',
+            use_filename: false,
+            unique_filename: true,
+          },
+          (error, result) => {
+            if (error || !result) return reject(error ?? new Error('Upload failed'));
+            resolve(result.secure_url);
+          },
+        );
+        stream.end(buffer);
+      });
+    } catch (err) {
+      const msg =
+        (err as { message?: string; error?: { message?: string } }).error?.message ||
+        (err as { message?: string }).message ||
+        'Upload failed';
+      throw new BadRequestException(`Cloudinary upload failed: ${msg}`);
+    }
 
     return { url, originalName, mimeType };
   }
