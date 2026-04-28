@@ -35,9 +35,12 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const { language } = useLanguage();
   const unreadNotifications = useNotificationsStore((s) => s.items.filter((item) => !item.read).length);
-  const unreadDirectIds = useChatActivityStore((s) => s.unreadDirectIds);
-  const unreadRoomIds = useChatActivityStore((s) => s.unreadRoomIds);
-  const unreadChatsCount = unreadDirectIds.length + unreadRoomIds.length;
+  const unreadDirectCount = useChatActivityStore((s) => s.unreadDirectCount);
+  const unreadRoomCount = useChatActivityStore((s) => s.unreadRoomCount);
+  const unreadChatsCount =
+    Object.values(unreadDirectCount).reduce((a, b) => a + b, 0) +
+    Object.values(unreadRoomCount).reduce((a, b) => a + b, 0);
+  const unreadRoomsTotal = Object.values(unreadRoomCount).reduce((a, b) => a + b, 0);
 
   const [pendingContacts, setPendingContacts] = useState(0);
 
@@ -63,7 +66,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     { icon: MessageCircle, label: language === 'en' ? 'Chats' : 'Чаты', path: '/dashboard', badge: unreadChatsCount, highlight: unreadChatsCount > 0 },
     { icon: Users, label: language === 'en' ? 'Contacts' : 'Контакты', path: '/contacts', badge: pendingContacts, highlight: pendingContacts > 0 },
     { icon: User, label: language === 'en' ? 'Profile' : 'Профиль', path: '/profile' },
-    { icon: Home, label: language === 'en' ? 'Rooms' : 'Комнаты', path: '/rooms', badge: unreadRoomIds.length, highlight: unreadRoomIds.length > 0 },
+    { icon: Home, label: language === 'en' ? 'Rooms' : 'Комнаты', path: '/rooms', badge: unreadRoomsTotal, highlight: unreadRoomsTotal > 0 },
     { icon: Send, label: language === 'en' ? 'Invites' : 'Приглашения', path: '/invites' },
     { icon: Bell, label: language === 'en' ? 'Notifications' : 'Уведомления', path: '/notifications', badge: unreadNotifications, highlight: unreadNotifications > 0 },
     { icon: Settings, label: language === 'en' ? 'Settings' : 'Настройки', path: '/settings' },

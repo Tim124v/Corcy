@@ -32,10 +32,12 @@ export function useSocket(handlers: {
 
     const socket = io(API_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      timeout: 20000,
+      forceNew: false,
     });
 
     socketRef.current = socket;
@@ -46,9 +48,14 @@ export function useSocket(handlers: {
       handlersRef.current.onConnect?.();
     });
 
-    socket.on('disconnect', () => {
+    socket.on('connect_error', (err) => {
       // eslint-disable-next-line no-console
-      console.log('[WS] Disconnected');
+      console.log('[WS] Connect error:', err.message);
+    });
+
+    socket.on('disconnect', (reason) => {
+      // eslint-disable-next-line no-console
+      console.log('[WS] Disconnected:', reason);
       handlersRef.current.onDisconnect?.();
     });
 

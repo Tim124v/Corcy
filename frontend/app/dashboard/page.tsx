@@ -178,8 +178,12 @@ function DashboardInner() {
   const addNotification = useNotificationsStore((s) => s.addNotification);
   const unreadDirectIds = useChatActivityStore((s) => s.unreadDirectIds);
   const unreadRoomIds = useChatActivityStore((s) => s.unreadRoomIds);
-  const addUnreadDirect = useChatActivityStore((s) => s.addUnreadDirect);
-  const addUnreadRoom = useChatActivityStore((s) => s.addUnreadRoom);
+  const unreadDirectCount = useChatActivityStore((s) => s.unreadDirectCount);
+  const unreadRoomCount = useChatActivityStore((s) => s.unreadRoomCount);
+  const incrementUnreadDirect = useChatActivityStore((s) => s.incrementUnreadDirect);
+  const incrementUnreadRoom = useChatActivityStore((s) => s.incrementUnreadRoom);
+  const clearUnreadDirect = useChatActivityStore((s) => s.clearUnreadDirect);
+  const clearUnreadRoom = useChatActivityStore((s) => s.clearUnreadRoom);
   const markDirectAsRead = useChatActivityStore((s) => s.markDirectAsRead);
   const markRoomAsRead = useChatActivityStore((s) => s.markRoomAsRead);
   const { showNotification } = useBrowserNotifications();
@@ -215,8 +219,15 @@ function DashboardInner() {
   const messagesCacheRef = useRef<{ rooms: Record<string, RoomMessage[]>; direct: Record<string, Message[]> }>({ rooms: {}, direct: {} });
 
   const { joinRoom, leaveRoom } = useSocket({
+    onConnect: () => {
+      // При реконнекте сокет теряет подписки на комнаты — переподписываемся
+      rooms.forEach((r) => joinRoom(r.id));
+      if (selectedRoom?.id) joinRoom(selectedRoom.id);
+    },
     onNewDirectMessage: (data) => {
       const msg = data as Message;
+      // eslint-disable-next-line no-console
+      console.log('[WS] newDirectMessage:', { id: msg.id, senderId: msg.senderId, recipientId: msg.recipientId, createdAt: msg.createdAt });
 
       // Обновить кэш сообщений
       messagesCacheRef.current.direct[msg.senderId] = [
@@ -226,13 +237,17 @@ function DashboardInner() {
 
       // Если этот чат открыт — обновить отображение
       if (selected?.user.id === msg.senderId) {
+        // eslint-disable-next-line no-console
+        console.log('[WS] direct: chat is open, append message');
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
       } else {
         // Чат не открыт — показать бейдж и уведомление
-        addUnreadDirect(msg.senderId);
+        // eslint-disable-next-line no-console
+        console.log('[WS] direct: chat NOT open, increment unread');
+        incrementUnreadDirect(msg.senderId);
         const sender = connections.find((c) => c.user.id === msg.senderId);
         const senderName = sender?.user.name || sender?.user.email || 'Новое сообщение';
         showNotification('CONNEXY', {
@@ -244,6 +259,8 @@ function DashboardInner() {
 
     onNewRoomMessage: (data) => {
       const msg = data as RoomMessage & { roomId: string };
+      // eslint-disable-next-line no-console
+      console.log('[WS] newRoomMessage:', { id: msg.id, roomId: msg.roomId, senderId: msg.senderId, createdAt: msg.createdAt });
 
       // Обновить кэш комнаты
       messagesCacheRef.current.rooms[msg.roomId] = [
@@ -253,13 +270,17 @@ function DashboardInner() {
 
       // Если эта комната открыта — обновить отображение
       if (selectedRoom?.id === msg.roomId) {
+        // eslint-disable-next-line no-console
+        console.log('[WS] room: room is open, append message');
         setRoomMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
       } else {
         // Комната не открыта — показать бейдж и уведомление
-        addUnreadRoom(msg.roomId);
+        // eslint-disable-next-line no-console
+        console.log('[WS] room: room NOT open, increment unread');
+        incrementUnreadRoom(msg.roomId);
         const room = rooms.find((r) => r.id === msg.roomId);
         showNotification('CONNEXY', {
           body: `Новое сообщение в комнате "${room?.name || 'Комната'}"`,
@@ -360,8 +381,9 @@ function DashboardInner() {
       setSelected(null);
       setSelectedRoom(found);
       markRoomAsRead(found.id);
+        clearUnreadRoom(found.id);
     }
-  }, [joinRoom, leaveRoom, markRoomAsRead, rooms, searchParams, selectedRoom?.id]);
+  }, [joinRoom, leaveRoom, markRoomAsRead, rooms, searchParams, selectedRoom?.id, clearUnreadRoom]);
 
   useEffect(() => {
     if (!selected) {
@@ -474,8 +496,6 @@ function DashboardInner() {
 
           lastKnownIncomingDirectRef.current[peerId] = latestIncoming!;
           if (selected?.user.id !== peerId) {
-            addUnreadDirect(peerId);
-
             // Показываем уведомление только если сообщение свежее (до 25 сек)
             if (messageAge < 25000) {
               const sender = connections.find((c) => c.user.id === peerId);
@@ -497,7 +517,7 @@ function DashboardInner() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [addUnreadDirect, connections, selected?.user.id, user?.id]);
+  }, [connections, selected?.user.id, showNotification, user?.id]);
 
   useEffect(() => {
     if (!user?.id || !rooms.length) return;
@@ -536,8 +556,6 @@ function DashboardInner() {
 
           lastKnownIncomingRoomRef.current[roomId] = latestIncoming!;
           if (selectedRoom?.id !== roomId) {
-            addUnreadRoom(roomId);
-
             // Показываем уведомление только если сообщение свежее (до 25 сек)
             if (messageAge < 25000) {
               const room = rooms.find((r) => r.id === roomId);
@@ -559,7 +577,7 @@ function DashboardInner() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [addUnreadRoom, rooms, selectedRoom?.id, user?.id]);
+  }, [rooms, selectedRoom?.id, showNotification, user?.id]);
 
   useEffect(() => {
     if (!selected?.user.id || !user?.id) return;
@@ -949,6 +967,7 @@ function DashboardInner() {
                               setSelected(c);
                               setSelectedRoom(null);
                               markDirectAsRead(c.user.id);
+                              clearUnreadDirect(c.user.id);
                               if (typeof window !== 'undefined' && window.innerWidth < 1024) setMobileView('chat');
                             }}
                             className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${isUnread ? 'border-l-2 border-blue-500' : ''} ${
@@ -975,7 +994,14 @@ function DashboardInner() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
                                   <div className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">{c.user.name || c.user.email}</div>
-                                  {isUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />}
+                                  {(() => {
+                                    const count = unreadDirectCount[c.user.id] ?? 0;
+                                    return count > 0 ? (
+                                      <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                                        {count}
+                                      </span>
+                                    ) : null;
+                                  })()}
                                 </div>
                                 <div className={`truncate text-[13px] ${isUnread ? 'text-blue-700 dark:text-blue-200/90' : 'text-slate-500 dark:text-slate-300/80'}`}>{c.user.email}</div>
                               </div>
@@ -1092,6 +1118,7 @@ function DashboardInner() {
                               setSelected(null);
                               setSelectedRoom(r);
                               markRoomAsRead(r.id);
+                              clearUnreadRoom(r.id);
                               if (typeof window !== 'undefined' && window.innerWidth < 1024) setMobileView('chat');
                             }}
                             className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${
@@ -1111,7 +1138,14 @@ function DashboardInner() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
                                   <div className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">{r.name}</div>
-                                  {isUnread && <span className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.9)]" />}
+                                  {(() => {
+                                    const count = unreadRoomCount[r.id] ?? 0;
+                                    return count > 0 ? (
+                                      <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                                        {count}
+                                      </span>
+                                    ) : null;
+                                  })()}
                                 </div>
                                 <div className={`truncate text-[13px] ${isUnread ? 'text-blue-700 dark:text-blue-200/90' : 'text-slate-500 dark:text-slate-300/80'}`}>
                                   {r.isOwner ? (isEn ? 'Your room' : 'Ваша комната') : (r.owner.name || r.owner.email)}

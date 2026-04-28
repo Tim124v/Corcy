@@ -9,15 +9,28 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 
-const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000')
-  .split(',')
-  .map((s) => s.trim());
+const isDev = process.env.NODE_ENV !== 'production';
+
+const corsOrigins = [
+  ...(process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean),
+  ...(process.env.FRONTEND_URL || '').split(',').map((s) => s.trim()).filter(Boolean),
+  ...(isDev ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : []),
+].filter(Boolean);
 
 @WebSocketGateway({
-  cors: { origin: corsOrigins, credentials: true },
-  transports: ['websocket', 'polling'],
-  namespace: '/',
+  cors: {
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin || corsOrigins.includes(origin)) {
+        cb(null, true);
+      } else {
+        cb(new Error(`WS CORS blocked: ${origin}`));
+      }
+    },
+    credentials: true,
+  },
+  transports: ['polling', 'websocket'],
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -26,7 +39,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // userId → Set<socketId>
   private userSockets = new Map<string, Set<string>>();
 
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+  ) {}
 
   async handleConnection(client: Socket) {
     try {
@@ -36,11 +52,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.handshake.headers?.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        client.disconnect(); return;
+        // eslint-disable-next-line no-console
+        console.warn('[WS] Disconnect: missing token');
+        client.disconnect();
+        return;
       }
 
       const payload = this.jwt.verify<{ sub: string }>(token, {
-        secret: process.env.JWT_SECRET,
+        secret: this.config.get<string>('JWT_SECRET', 'dev-secret-change-in-production'),
       });
 
       client.data.userId = payload.sub;
@@ -56,7 +75,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // eslint-disable-next-line no-console
       console.log(`[WS] Connected: ${payload.sub} (${client.id})`);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[WS] Disconnect: token verify failed');
       client.disconnect();
     }
   }
