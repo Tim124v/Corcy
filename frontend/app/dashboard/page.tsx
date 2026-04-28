@@ -11,6 +11,7 @@ import { useTheme } from '../../components/theme-provider';
 import { useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
 import { useNotificationsStore } from '../../store/notifications';
 import { useChatActivityStore } from '../../store/chat-activity';
+import { useBrowserNotifications } from '../../hooks/use-browser-notifications';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { MessageStatus } from '../../components/chat/MessageStatus';
@@ -180,6 +181,7 @@ function DashboardInner() {
   const addUnreadRoom = useChatActivityStore((s) => s.addUnreadRoom);
   const markDirectAsRead = useChatActivityStore((s) => s.markDirectAsRead);
   const markRoomAsRead = useChatActivityStore((s) => s.markRoomAsRead);
+  const { showNotification } = useBrowserNotifications();
   const profilePhoto = useCurrentUserAvatar(user?.id, user?.avatarUrl);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -402,6 +404,14 @@ function DashboardInner() {
           lastKnownIncomingDirectRef.current[peerId] = latestIncoming!;
           if (selected?.user.id !== peerId) {
             addUnreadDirect(peerId);
+
+            // Браузерное уведомление
+            const sender = connections.find((c) => c.user.id === peerId);
+            const senderName = sender?.user.name || sender?.user.email || 'Новое сообщение';
+            showNotification('CONNEXY', {
+              body: `${senderName} написал вам`,
+              tag: `direct-${peerId}`,
+            });
           }
         }
       });
@@ -448,6 +458,14 @@ function DashboardInner() {
           lastKnownIncomingRoomRef.current[roomId] = latestIncoming!;
           if (selectedRoom?.id !== roomId) {
             addUnreadRoom(roomId);
+
+            // Браузерное уведомление
+            const room = rooms.find((r) => r.id === roomId);
+            const roomName = room?.name || 'Комната';
+            showNotification('CONNEXY', {
+              body: `Новое сообщение в комнате "${roomName}"`,
+              tag: `room-${roomId}`,
+            });
           }
         }
       });
@@ -537,8 +555,7 @@ function DashboardInner() {
     }
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSend = async () => {
     if (isRoomChat) {
       if (!selectedRoom || (!messageText.trim() && !attachment) || !user) return;
       const textToSend = messageText.trim();
@@ -652,6 +669,15 @@ function DashboardInner() {
     }
   };
 
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await doSend();
+  };
+
+  const handleSend = () => {
+    void doSend();
+  };
+
   const deleteDirectMessage = async (messageId: string) => {
     if (!window.confirm(isEn ? 'Delete this message?' : 'Удалить это сообщение?')) return;
     setDeletingMessageId(messageId);
@@ -762,7 +788,7 @@ function DashboardInner() {
 
         <div className="grid min-h-[calc(100vh-7.5rem)] grid-cols-1 gap-5 lg:grid-cols-[352px,1fr]">
         {/* Mobile header */}
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3 backdrop-blur lg:hidden ${
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl p-2 backdrop-blur sm:p-4 lg:hidden ${
           isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8)]'
             : 'bg-white/85 shadow-[0_18px_40px_-30px_rgba(148,163,184,0.45)]'
@@ -1115,7 +1141,7 @@ function DashboardInner() {
                               <div key={m.id} className={`flex gap-2.5 ${isMine ? 'justify-end items-end' : 'justify-start items-end'} ${isPrevSameSender ? 'pt-0.5' : 'pt-4'}`}>
                                 {!isMine && (
                                   isNextSameSender ? (
-                                    <div className="h-9 w-9 shrink-0" />
+                                  <div className="h-6 w-6 shrink-0 sm:h-9 sm:w-9" />
                                   ) : (
                                     <div className="ring-2 ring-slate-200/80 dark:ring-slate-700/60 rounded-full shrink-0">
                                       {renderAvatar({
@@ -1123,12 +1149,12 @@ function DashboardInner() {
                                         email: rm.sender?.email,
                                         photo: rm.sender?.avatarUrl,
                                         userId: rm.sender?.id,
-                                        className: 'h-9 w-9',
+                                      className: 'h-6 w-6 sm:h-9 sm:w-9',
                                       })}
                                     </div>
                                   )
                                 )}
-                                <div className={`${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-4 py-2.5 shadow-sm ${
+                                <div className={`${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-3 py-1.5 shadow-sm sm:px-4 sm:py-2 ${
                                   isMine
                                     ? 'bg-indigo-500 text-white dark:bg-indigo-600'
                                     : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
@@ -1149,7 +1175,11 @@ function DashboardInner() {
                                       )}
                                     </div>
                                   )}
-                                  {m.text && <div className={`text-[15px] leading-[1.45] break-words ${rm.attachmentUrl ? 'mt-2' : ''}`}>{m.text}</div>}
+                                  {m.text && (
+                                    <div className={`text-xs leading-[1.45] break-words sm:text-sm ${rm.attachmentUrl ? 'mt-2' : ''}`}>
+                                      {m.text}
+                                    </div>
+                                  )}
                                   <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
                                     <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                     {isMine && <MessageStatus status="sent" className="text-white/80" />}
@@ -1157,7 +1187,7 @@ function DashboardInner() {
                                 </div>
                                 {isMine && (
                                   isNextSameSender ? (
-                                    <div className="h-9 w-9 shrink-0" />
+                                    <div className="h-6 w-6 shrink-0 sm:h-9 sm:w-9" />
                                   ) : (
                                     <div className="ring-2 ring-indigo-200/60 dark:ring-indigo-900/50 rounded-full shrink-0">
                                       {renderAvatar({
@@ -1165,7 +1195,7 @@ function DashboardInner() {
                                         email: user?.email,
                                         photo: profilePhoto,
                                         userId: user?.id,
-                                        className: 'h-9 w-9',
+                                        className: 'h-6 w-6 sm:h-9 sm:w-9',
                                       })}
                                     </div>
                                   )
@@ -1198,7 +1228,7 @@ function DashboardInner() {
                             <div key={m.id} className={`flex gap-2.5 ${isMine ? 'justify-end items-end' : 'justify-start items-end'} ${isPrevSameSender ? 'pt-0.5' : 'pt-4'}`}>
                               {!isMine && (
                                 isNextSameSender ? (
-                                  <div className="h-9 w-9 shrink-0" />
+                                <div className="h-6 w-6 shrink-0 sm:h-9 sm:w-9" />
                                 ) : (
                                   <div className="ring-2 ring-slate-200/80 dark:ring-slate-600/50 rounded-full shrink-0">
                                     {renderAvatar({
@@ -1206,12 +1236,12 @@ function DashboardInner() {
                                       email: selected?.user.email,
                                       photo: selected?.user.avatarUrl,
                                       userId: selected?.user.id,
-                                      className: 'h-9 w-9',
+                                    className: 'h-6 w-6 sm:h-9 sm:w-9',
                                     })}
                                   </div>
                                 )
                               )}
-                              <div className={`group relative ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-4 py-2.5 shadow-sm ${
+                              <div className={`group relative ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-3 py-1.5 shadow-sm sm:px-4 sm:py-2 ${
                                 isMine
                                   ? 'bg-indigo-500 text-white dark:bg-indigo-600'
                                   : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
@@ -1239,7 +1269,11 @@ function DashboardInner() {
                                     )}
                                   </div>
                                 )}
-                                {m.text && <div className={`text-[15px] leading-[1.45] break-words ${(m as Message).attachmentUrl ? 'mt-2' : ''}`}>{m.text}</div>}
+                                {m.text && (
+                                  <div className={`text-xs leading-[1.45] break-words sm:text-sm ${(m as Message).attachmentUrl ? 'mt-2' : ''}`}>
+                                    {m.text}
+                                  </div>
+                                )}
                                 <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
                                   <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                   {isMine && <MessageStatus status="sent" className="text-white/80" />}
@@ -1247,7 +1281,7 @@ function DashboardInner() {
                               </div>
                               {isMine && (
                                 isNextSameSender ? (
-                                  <div className="h-9 w-9 shrink-0" />
+                                  <div className="h-6 w-6 shrink-0 sm:h-9 sm:w-9" />
                                 ) : (
                                   <div className="ring-2 ring-indigo-200/60 dark:ring-indigo-900/50 rounded-full shrink-0">
                                     {renderAvatar({
@@ -1255,7 +1289,7 @@ function DashboardInner() {
                                       email: user?.email,
                                       photo: profilePhoto,
                                       userId: user?.id,
-                                      className: 'h-9 w-9',
+                                      className: 'h-6 w-6 sm:h-9 sm:w-9',
                                     })}
                                   </div>
                                 )
@@ -1307,7 +1341,7 @@ function DashboardInner() {
                       </button>
                     </div>
                   )}
-                  <div className="relative flex flex-wrap items-center gap-2 rounded-[24px] bg-white/96 px-4 py-3.5 text-slate-900 shadow-[0_16px_34px_-24px_rgba(148,163,184,0.34)] dark:bg-slate-950/40 dark:text-slate-50 dark:shadow-[0_18px_36px_-26px_rgba(0,0,0,0.58)]">
+                  <div className="relative flex flex-wrap items-center gap-2 rounded-[24px] bg-white/96 px-3 py-2 text-slate-900 shadow-[0_16px_34px_-24px_rgba(148,163,184,0.34)] dark:bg-slate-950/40 dark:text-slate-50 dark:shadow-[0_18px_36px_-26px_rgba(0,0,0,0.58)] sm:px-4 sm:py-3.5">
                     <div ref={attachMenuRef} className="relative">
                       <button
                         type="button"
@@ -1348,7 +1382,7 @@ function DashboardInner() {
                     </div>
 
                     <input
-                      className="min-w-0 flex-1 bg-transparent text-[15px] placeholder:text-slate-500 outline-none"
+                      className="min-w-0 flex-1 bg-transparent text-xs placeholder:text-slate-500 outline-none sm:text-sm"
                       value={messageText}
                       onChange={(e) => {
                         setMessageText(e.target.value);
@@ -1360,12 +1394,25 @@ function DashboardInner() {
                       placeholder={isRoomChat ? (isEn ? 'Message to room...' : 'Сообщение в комнату...') : (isEn ? 'Message...' : 'Сообщение...')}
                     />
 
-                    <Button
-                      type="submit"
-                      className="h-10 shrink-0 rounded-full px-3 text-xs font-semibold sm:h-12 sm:px-6 sm:text-sm"
+                    <button
+                      type="button"
+                      onClick={handleSend}
+                      disabled={!messageText.trim() && !attachment}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white shadow-[0_0_12px_rgba(99,102,241,0.6)] hover:from-blue-400 hover:to-violet-400 hover:shadow-[0_0_18px_rgba(99,102,241,0.8)] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 active:scale-95 sm:h-10 sm:w-10"
+                      aria-label="Отправить"
                     >
-                      {isEn ? 'Send' : 'Отправить'}
-                    </Button>
+                      <svg
+                        className="h-3.5 w-3.5 sm:h-4 sm:w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 19 L19 5 M19 5 L19 12 M19 5 L12 5" />
+                      </svg>
+                    </button>
                   </div>
                   <>
                     <input
