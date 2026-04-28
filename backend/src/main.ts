@@ -23,6 +23,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
+  // Render и другие reverse proxy передают реальный IP через X-Forwarded-For
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   const configService = app.get(ConfigService);
 
   const port = configService.get<number>('PORT', 3001);
