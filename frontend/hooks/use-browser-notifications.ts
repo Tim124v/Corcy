@@ -36,8 +36,7 @@ export function useBrowserNotifications() {
       if (
         typeof window === 'undefined' ||
         !('Notification' in window) ||
-        Notification.permission !== 'granted' ||
-        document.visibilityState === 'visible' // не показывать если вкладка активна
+        Notification.permission !== 'granted'
       ) {
         return;
       }

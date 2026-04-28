@@ -16,7 +16,10 @@
     "dev:frontend": "npm run dev -w frontend",
     "build": "npm run build -w backend && npm run build -w frontend",
     "start": "echo 'Запустите backend и frontend: npm run dev:backend и npm run dev:frontend'"
+  },
+  "dependencies": {
+    "@nestjs/platform-socket.io": "^11.1.19",
+    "@nestjs/websockets": "^11.1.19",
+    "socket.io": "^4.8.3"
   }
 }
-
-

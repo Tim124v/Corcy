@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { hashPassword, verifyPassword } from '../security/password.util.js';
 import { mapMessagesText, prepareMessageForApi, prepareMessageForStorage } from '../security/message-encryption.util.js';
+import { ChatGateway } from '../chat/chat.gateway.js';
 
 interface MembershipWithRoom {
   room: { id: string; name: string; ownerId: string; expiresAt: Date; owner: { id: string; email: string; name: string | null; avatarUrl: string | null } };
@@ -22,7 +23,10 @@ interface RoomMessageWithSender {
 
 @Injectable()
 export class RoomsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chatGateway: ChatGateway,
+  ) {}
 
   private async cleanupExpired() {
     await this.prisma.room.deleteMany({ where: { expiresAt: { lt: new Date() } } });
@@ -172,7 +176,7 @@ export class RoomsService {
       },
       include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
-    return {
+    const out = {
       id: message.id,
       text: prepareMessageForApi(message.text),
       senderId: message.senderId,
@@ -182,5 +186,13 @@ export class RoomsService {
       createdAt: message.createdAt,
       sender: message.sender,
     };
+
+    // Эмитим событие всем участникам комнаты в реальном времени
+    this.chatGateway.sendToRoom(roomId, 'newRoomMessage', {
+      ...out,
+      roomId,
+    });
+
+    return out;
   }
 }

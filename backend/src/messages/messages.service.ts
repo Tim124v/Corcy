@@ -1,10 +1,14 @@
 import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { mapMessagesText, prepareMessageForApi, prepareMessageForStorage } from '../security/message-encryption.util.js';
+import { ChatGateway } from '../chat/chat.gateway.js';
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chatGateway: ChatGateway,
+  ) {}
 
   async getThread(currentUserId: string, peerId: string) {
     if (!peerId) throw new BadRequestException('peerId is required');
@@ -43,7 +47,15 @@ export class MessagesService {
         attachmentType: attachment?.type ?? null,
       },
     });
-    return { ...row, text: prepareMessageForApi(row.text) };
+
+    // Эмитим событие получателю в реальном времени
+    const messageForClient = { ...row, text: prepareMessageForApi(row.text) };
+    this.chatGateway.sendToUser(to, 'newDirectMessage', {
+      ...messageForClient,
+      text: text.trim(),
+    });
+
+    return messageForClient;
   }
 
   async remove(currentUserId: string, messageId: string) {

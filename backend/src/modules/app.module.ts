@@ -9,6 +9,7 @@ import { ConnectionsModule } from '../connections/connections.module.js';
 import { MessagesModule } from '../messages/messages.module.js';
 import { RoomsModule } from '../rooms/rooms.module.js';
 import { WaitlistModule } from '../waitlist/waitlist.module.js';
+import { ChatModule } from '../chat/chat.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { WaitlistModule } from '../waitlist/waitlist.module.js';
     MessagesModule,
     RoomsModule,
     WaitlistModule,
+    ChatModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

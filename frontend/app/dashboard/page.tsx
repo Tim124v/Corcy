@@ -12,6 +12,7 @@ import { useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
 import { useNotificationsStore } from '../../store/notifications';
 import { useChatActivityStore } from '../../store/chat-activity';
 import { useBrowserNotifications } from '../../hooks/use-browser-notifications';
+import { useSocket } from '../../hooks/use-socket';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { MessageStatus } from '../../components/chat/MessageStatus';
@@ -213,6 +214,61 @@ function DashboardInner() {
   const lastKnownIncomingRoomRef = useRef<Record<string, string>>({});
   const messagesCacheRef = useRef<{ rooms: Record<string, RoomMessage[]>; direct: Record<string, Message[]> }>({ rooms: {}, direct: {} });
 
+  const { joinRoom, leaveRoom } = useSocket({
+    onNewDirectMessage: (data) => {
+      const msg = data as Message;
+
+      // Обновить кэш сообщений
+      messagesCacheRef.current.direct[msg.senderId] = [
+        ...(messagesCacheRef.current.direct[msg.senderId] || []),
+        msg,
+      ];
+
+      // Если этот чат открыт — обновить отображение
+      if (selected?.user.id === msg.senderId) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      } else {
+        // Чат не открыт — показать бейдж и уведомление
+        addUnreadDirect(msg.senderId);
+        const sender = connections.find((c) => c.user.id === msg.senderId);
+        const senderName = sender?.user.name || sender?.user.email || 'Новое сообщение';
+        showNotification('CONNEXY', {
+          body: `${senderName} написал вам`,
+          tag: `direct-${msg.senderId}`,
+        });
+      }
+    },
+
+    onNewRoomMessage: (data) => {
+      const msg = data as RoomMessage & { roomId: string };
+
+      // Обновить кэш комнаты
+      messagesCacheRef.current.rooms[msg.roomId] = [
+        ...(messagesCacheRef.current.rooms[msg.roomId] || []),
+        msg,
+      ];
+
+      // Если эта комната открыта — обновить отображение
+      if (selectedRoom?.id === msg.roomId) {
+        setRoomMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      } else {
+        // Комната не открыта — показать бейдж и уведомление
+        addUnreadRoom(msg.roomId);
+        const room = rooms.find((r) => r.id === msg.roomId);
+        showNotification('CONNEXY', {
+          body: `Новое сообщение в комнате "${room?.name || 'Комната'}"`,
+          tag: `room-${msg.roomId}`,
+        });
+      }
+    },
+  });
+
   useEffect(() => {
     if (!showAttach) return;
     const onMouseDown = (e: MouseEvent) => {
@@ -264,9 +320,13 @@ function DashboardInner() {
       .then(setInvites)
       .catch(() => setInvites([]));
     api<Room[]>('/rooms')
-      .then(setRooms)
+      .then((loadedRooms) => {
+        setRooms(loadedRooms);
+        // Присоединиться к WebSocket комнатам
+        loadedRooms.forEach((room) => joinRoom(room.id));
+      })
       .catch(() => setRooms([]));
-  }, [accessToken, router, hydrated]);
+  }, [accessToken, joinRoom, router, hydrated]);
 
   useEffect(() => {
     if (!selected && !selectedRoom) setMobileView('list');
@@ -292,11 +352,16 @@ function DashboardInner() {
     if (!roomId) return;
     const found = rooms.find((room) => room.id === roomId);
     if (found) {
+      // Переключаем подписку на WS-комнаты
+      if (selectedRoom?.id && selectedRoom.id !== found.id) {
+        leaveRoom(selectedRoom.id);
+      }
+      joinRoom(found.id);
       setSelected(null);
       setSelectedRoom(found);
       markRoomAsRead(found.id);
     }
-  }, [markRoomAsRead, rooms, searchParams]);
+  }, [joinRoom, leaveRoom, markRoomAsRead, rooms, searchParams, selectedRoom?.id]);
 
   useEffect(() => {
     if (!selected) {
@@ -396,22 +461,30 @@ function DashboardInner() {
         const previousIncoming = lastKnownIncomingDirectRef.current[peerId];
 
         if (!previousIncoming) {
-          if (latestIncoming) lastKnownIncomingDirectRef.current[peerId] = latestIncoming;
+          if (latestIncoming) {
+            lastKnownIncomingDirectRef.current[peerId] = latestIncoming;
+          }
           return;
         }
 
         if (isTimestampNewer(latestIncoming, previousIncoming)) {
+          const messageAge = latestIncoming
+            ? Date.now() - new Date(latestIncoming).getTime()
+            : Infinity;
+
           lastKnownIncomingDirectRef.current[peerId] = latestIncoming!;
           if (selected?.user.id !== peerId) {
             addUnreadDirect(peerId);
 
-            // Браузерное уведомление
-            const sender = connections.find((c) => c.user.id === peerId);
-            const senderName = sender?.user.name || sender?.user.email || 'Новое сообщение';
-            showNotification('CONNEXY', {
-              body: `${senderName} написал вам`,
-              tag: `direct-${peerId}`,
-            });
+            // Показываем уведомление только если сообщение свежее (до 25 сек)
+            if (messageAge < 25000) {
+              const sender = connections.find((c) => c.user.id === peerId);
+              const senderName = sender?.user.name || sender?.user.email || 'Новое сообщение';
+              showNotification('CONNEXY', {
+                body: `${senderName} написал вам`,
+                tag: `direct-${peerId}`,
+              });
+            }
           }
         }
       });
@@ -450,22 +523,30 @@ function DashboardInner() {
         const previousIncoming = lastKnownIncomingRoomRef.current[roomId];
 
         if (!previousIncoming) {
-          if (latestIncoming) lastKnownIncomingRoomRef.current[roomId] = latestIncoming;
+          if (latestIncoming) {
+            lastKnownIncomingRoomRef.current[roomId] = latestIncoming;
+          }
           return;
         }
 
         if (isTimestampNewer(latestIncoming, previousIncoming)) {
+          const messageAge = latestIncoming
+            ? Date.now() - new Date(latestIncoming).getTime()
+            : Infinity;
+
           lastKnownIncomingRoomRef.current[roomId] = latestIncoming!;
           if (selectedRoom?.id !== roomId) {
             addUnreadRoom(roomId);
 
-            // Браузерное уведомление
-            const room = rooms.find((r) => r.id === roomId);
-            const roomName = room?.name || 'Комната';
-            showNotification('CONNEXY', {
-              body: `Новое сообщение в комнате "${roomName}"`,
-              tag: `room-${roomId}`,
-            });
+            // Показываем уведомление только если сообщение свежее (до 25 сек)
+            if (messageAge < 25000) {
+              const room = rooms.find((r) => r.id === roomId);
+              const roomName = room?.name || 'Комната';
+              showNotification('CONNEXY', {
+                body: `Новое сообщение в комнате "${roomName}"`,
+                tag: `room-${roomId}`,
+              });
+            }
           }
         }
       });
@@ -870,7 +951,7 @@ function DashboardInner() {
                               markDirectAsRead(c.user.id);
                               if (typeof window !== 'undefined' && window.innerWidth < 1024) setMobileView('chat');
                             }}
-                            className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${
+                            className={`w-full rounded-[20px] px-3.5 py-3.5 text-left transition ${isUnread ? 'border-l-2 border-blue-500' : ''} ${
                               selected?.id === c.id
                                 ? 'bg-[linear-gradient(180deg,rgba(82,104,245,0.22),rgba(33,48,102,0.16))] shadow-[0_18px_34px_-28px_rgba(79,70,229,0.38)]'
                                 : isUnread
@@ -894,7 +975,7 @@ function DashboardInner() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
                                   <div className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">{c.user.name || c.user.email}</div>
-                                  {isUnread && <span className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.9)]" />}
+                                  {isUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />}
                                 </div>
                                 <div className={`truncate text-[13px] ${isUnread ? 'text-blue-700 dark:text-blue-200/90' : 'text-slate-500 dark:text-slate-300/80'}`}>{c.user.email}</div>
                               </div>
@@ -1224,6 +1305,7 @@ function DashboardInner() {
                           const next = group.items[index + 1];
                           const isPrevSameSender = prev?.senderId === m.senderId;
                           const isNextSameSender = next?.senderId === m.senderId;
+                          const senderName = selected?.user.name || selected?.user.email || '';
                           return (
                             <div key={m.id} className={`flex gap-2.5 ${isMine ? 'justify-end items-end' : 'justify-start items-end'} ${isPrevSameSender ? 'pt-0.5' : 'pt-4'}`}>
                               {!isMine && (
@@ -1246,6 +1328,11 @@ function DashboardInner() {
                                   ? 'bg-indigo-500 text-white dark:bg-indigo-600'
                                   : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
                               }`}>
+                                {!isMine && !isPrevSameSender && senderName && (
+                                  <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                    {senderName}
+                                  </div>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => void deleteDirectMessage(m.id)}
