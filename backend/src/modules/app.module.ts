@@ -15,9 +15,9 @@ import { ChatModule } from '../chat/chat.module.js';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
-      { name: 'short', ttl: 1000, limit: 10 }, // 10 req/сек
-      { name: 'medium', ttl: 60_000, limit: 100 }, // 100 req/мин
-      { name: 'long', ttl: 3_600_000, limit: 1000 }, // 1000 req/час
+      { name: 'short', ttl: 1000, limit: 10 },
+      { name: 'medium', ttl: 60_000, limit: 100 },
+      { name: 'long', ttl: 3_600_000, limit: 1000 },
     ]),
     PrismaModule,
     AuthModule,
@@ -28,6 +28,11 @@ import { ChatModule } from '../chat/chat.module.js';
     WaitlistModule,
     ChatModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}
