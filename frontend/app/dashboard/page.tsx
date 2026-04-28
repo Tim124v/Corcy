@@ -218,77 +218,7 @@ function DashboardInner() {
   const lastKnownIncomingRoomRef = useRef<Record<string, string>>({});
   const messagesCacheRef = useRef<{ rooms: Record<string, RoomMessage[]>; direct: Record<string, Message[]> }>({ rooms: {}, direct: {} });
 
-  const { joinRoom, leaveRoom } = useSocket({
-    onConnect: () => {
-      // При реконнекте сокет теряет подписки на комнаты — переподписываемся
-      rooms.forEach((r) => joinRoom(r.id));
-      if (selectedRoom?.id) joinRoom(selectedRoom.id);
-    },
-    onNewDirectMessage: (data) => {
-      const msg = data as Message;
-      // eslint-disable-next-line no-console
-      console.log('[WS] newDirectMessage:', { id: msg.id, senderId: msg.senderId, recipientId: msg.recipientId, createdAt: msg.createdAt });
-
-      // Обновить кэш сообщений
-      messagesCacheRef.current.direct[msg.senderId] = [
-        ...(messagesCacheRef.current.direct[msg.senderId] || []),
-        msg,
-      ];
-
-      // Если этот чат открыт — обновить отображение
-      if (selected?.user.id === msg.senderId) {
-        // eslint-disable-next-line no-console
-        console.log('[WS] direct: chat is open, append message');
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-      } else {
-        // Чат не открыт — показать бейдж и уведомление
-        // eslint-disable-next-line no-console
-        console.log('[WS] direct: chat NOT open, increment unread');
-        incrementUnreadDirect(msg.senderId);
-        const sender = connections.find((c) => c.user.id === msg.senderId);
-        const senderName = sender?.user.name || sender?.user.email || 'Новое сообщение';
-        showNotification('CONNEXY', {
-          body: `${senderName} написал вам`,
-          tag: `direct-${msg.senderId}`,
-        });
-      }
-    },
-
-    onNewRoomMessage: (data) => {
-      const msg = data as RoomMessage & { roomId: string };
-      // eslint-disable-next-line no-console
-      console.log('[WS] newRoomMessage:', { id: msg.id, roomId: msg.roomId, senderId: msg.senderId, createdAt: msg.createdAt });
-
-      // Обновить кэш комнаты
-      messagesCacheRef.current.rooms[msg.roomId] = [
-        ...(messagesCacheRef.current.rooms[msg.roomId] || []),
-        msg,
-      ];
-
-      // Если эта комната открыта — обновить отображение
-      if (selectedRoom?.id === msg.roomId) {
-        // eslint-disable-next-line no-console
-        console.log('[WS] room: room is open, append message');
-        setRoomMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-      } else {
-        // Комната не открыта — показать бейдж и уведомление
-        // eslint-disable-next-line no-console
-        console.log('[WS] room: room NOT open, increment unread');
-        incrementUnreadRoom(msg.roomId);
-        const room = rooms.find((r) => r.id === msg.roomId);
-        showNotification('CONNEXY', {
-          body: `Новое сообщение в комнате "${room?.name || 'Комната'}"`,
-          tag: `room-${msg.roomId}`,
-        });
-      }
-    },
-  });
+  const { joinRoom, leaveRoom } = useSocket({});
 
   useEffect(() => {
     if (!showAttach) return;

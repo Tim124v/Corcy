@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/auth';
 import { ThemeProvider } from '../components/theme-provider';
 import { LanguageProvider } from '../components/language-provider';
 import { AppLayout } from '../components/layout/AppLayout';
+import { SocketProvider } from '../components/socket-provider';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const tryRestoreSession = useAuthStore((s) => s.tryRestoreSession);
@@ -25,6 +26,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
       <LanguageProvider>
+        <SocketProvider />
         <AppLayout>{children}</AppLayout>
       </LanguageProvider>
     </ThemeProvider>
