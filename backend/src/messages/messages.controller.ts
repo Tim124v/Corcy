@@ -41,8 +41,16 @@ export class MessagesController {
   ) {}
 
   @Get()
-  async getThread(@ReqUser() user: { id: string }, @Query('with') peerId: string) {
-    return this.messages.getThread(user.id, peerId);
+  async getThread(
+    @ReqUser() user: { id: string },
+    @Query('with') peerId: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.messages.getThread(user.id, peerId, {
+      before,
+      limit: limit ? Math.min(parseInt(limit, 10), 100) : 50,
+    });
   }
 
   @Post()
@@ -51,6 +59,11 @@ export class MessagesController {
     @Body() body: { to: string; text?: string; attachment?: { url?: string; name?: string; type?: string } },
   ) {
     return this.messages.send(user.id, body.to, body.text || '', body.attachment);
+  }
+
+  @Post(':id/read')
+  async markAsRead(@ReqUser() user: { id: string }, @Param('id') id: string) {
+    return this.messages.markAsRead(user.id, id);
   }
 
   @Delete(':id')

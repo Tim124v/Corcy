@@ -29,7 +29,9 @@ type Message = {
   attachmentUrl?: string | null;
   attachmentName?: string | null;
   attachmentType?: string | null;
+  readAt?: string | null;
 };
+type ThreadResponse = { messages: Message[]; hasMore: boolean; nextCursor?: string };
 type Grouped = { title: string; items: (Message | RoomMessage)[] };
 type AttachmentDraft = { type: 'media' | 'file'; name: string; file: File; preview?: string; size: number };
 type InviteItem = {
@@ -52,6 +54,7 @@ type Room = {
   expiresAt?: string;
 };
 type RoomMessage = { id: string; text: string; senderId: string; createdAt: string; systemEventType?: string; attachmentUrl?: string | null; attachmentName?: string | null; attachmentType?: string | null; sender: { id: string; email: string; name: string | null; avatarUrl?: string | null } };
+type RoomThreadResponse = { messages: RoomMessage[]; hasMore: boolean; nextCursor?: string };
 
 const initials = (name?: string | null, email?: string) => {
   if (name && name.trim()) {
@@ -172,7 +175,7 @@ const renderAvatar = ({
 function DashboardInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, accessToken, logout, hydrated } = useAuthStore();
+  const { user, accessToken, hydrated } = useAuthStore();
   const { language } = useLanguage();
   const { theme } = useTheme();
   const addNotification = useNotificationsStore((s) => s.addNotification);
@@ -209,6 +212,9 @@ function DashboardInner() {
   const [search, setSearch] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchRef = useRef<HTMLInputElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const pendingJumpToBottomRef = useRef(false);
   const [isInviteAccordionOpen, setIsInviteAccordionOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [creatingLink, setCreatingLink] = useState(false);
@@ -218,7 +224,26 @@ function DashboardInner() {
   const lastKnownIncomingRoomRef = useRef<Record<string, string>>({});
   const messagesCacheRef = useRef<{ rooms: Record<string, RoomMessage[]>; direct: Record<string, Message[]> }>({ rooms: {}, direct: {} });
 
-  const { joinRoom, leaveRoom } = useSocket({});
+  const scrollChatToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const el = chatRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  const { joinRoom, leaveRoom } = useSocket({
+    onMessageRead: (data) => {
+      setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, readAt: data.readAt } : m)));
+      const peerId = selected?.user.id;
+      if (peerId) {
+        const cached = messagesCacheRef.current.direct[peerId];
+        if (cached?.length) {
+          messagesCacheRef.current.direct[peerId] = cached.map((m) =>
+            m.id === data.messageId ? { ...m, readAt: data.readAt } : m,
+          );
+        }
+      }
+    },
+  });
 
   useEffect(() => {
     if (!showAttach) return;
@@ -280,8 +305,48 @@ function DashboardInner() {
   }, [accessToken, joinRoom, router, hydrated]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const setVars = () => {
+      // Реальная видимая высота (iOS Safari + клавиатура)
+      const viewportHeight = Math.round(vv.height);
+      // Нижний inset клавиатуры/оверлея (приблизительно)
+      const keyboardInset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      document.documentElement.style.setProperty('--vvh', `${viewportHeight}px`);
+      document.documentElement.style.setProperty('--keyboard-inset', `${keyboardInset}px`);
+    };
+
+    setVars();
+    vv.addEventListener('resize', setVars);
+    vv.addEventListener('scroll', setVars);
+    window.addEventListener('orientationchange', setVars);
+
+    return () => {
+      vv.removeEventListener('resize', setVars);
+      vv.removeEventListener('scroll', setVars);
+      window.removeEventListener('orientationchange', setVars);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selected && !selectedRoom) setMobileView('list');
   }, [selected, selectedRoom]);
+
+  useEffect(() => {
+    const el = chatRef.current;
+    if (!el) return;
+
+    const updateStickiness = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      shouldStickToBottomRef.current = distanceFromBottom < 140;
+    };
+
+    updateStickiness();
+    el.addEventListener('scroll', updateStickiness, { passive: true });
+    return () => el.removeEventListener('scroll', updateStickiness);
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60000);
@@ -323,11 +388,19 @@ function DashboardInner() {
     const cached = messagesCacheRef.current.direct[selected.user.id];
     if (cached?.length) setMessages(cached);
     else setMessages([]);
+    pendingJumpToBottomRef.current = true;
     setLoadingMessages(true);
-    api<Message[]>(`/messages?with=${selected.user.id}`, { method: 'GET' })
+    api<ThreadResponse>(`/messages?with=${selected.user.id}`, { method: 'GET' })
       .then((data) => {
-        setMessages(data);
-        messagesCacheRef.current.direct[selected.user.id] = data;
+        setMessages(data.messages);
+        messagesCacheRef.current.direct[selected.user.id] = data.messages;
+        pendingJumpToBottomRef.current = true;
+
+        data.messages
+          .filter((m) => m.recipientId === user?.id && !m.readAt)
+          .forEach((m) => {
+            void api(`/messages/${m.id}/read`, { method: 'POST' }).catch(() => {});
+          });
       })
       .catch(() => setMessages([]))
       .finally(() => setLoadingMessages(false));
@@ -337,10 +410,10 @@ function DashboardInner() {
     if (!selected) return;
     const peerId = selected.user.id;
     const id = setInterval(() => {
-      api<Message[]>(`/messages?with=${peerId}`, { method: 'GET' })
+      api<ThreadResponse>(`/messages?with=${peerId}`, { method: 'GET' })
         .then((data) => {
-          setMessages(data);
-          messagesCacheRef.current.direct[peerId] = data;
+          setMessages(data.messages);
+          messagesCacheRef.current.direct[peerId] = data.messages;
         })
         .catch(() => {});
     }, 20000);
@@ -355,11 +428,13 @@ function DashboardInner() {
     const cached = messagesCacheRef.current.rooms[selectedRoom.id];
     if (cached?.length) setRoomMessages(cached);
     else setRoomMessages([]);
+    pendingJumpToBottomRef.current = true;
     setLoadingRoomMessages(true);
-    api<RoomMessage[]>(`/rooms/${selectedRoom.id}/messages`, { method: 'GET' })
+    api<RoomThreadResponse>(`/rooms/${selectedRoom.id}/messages`, { method: 'GET' })
       .then((data) => {
-        setRoomMessages(data);
-        messagesCacheRef.current.rooms[selectedRoom.id] = data;
+        setRoomMessages(data.messages);
+        messagesCacheRef.current.rooms[selectedRoom.id] = data.messages;
+        pendingJumpToBottomRef.current = true;
       })
       .catch(() => setRoomMessages([]))
       .finally(() => setLoadingRoomMessages(false));
@@ -369,10 +444,10 @@ function DashboardInner() {
     if (!selectedRoom) return;
     const roomId = selectedRoom.id;
     const id = setInterval(() => {
-      api<RoomMessage[]>(`/rooms/${roomId}/messages`, { method: 'GET' })
+      api<RoomThreadResponse>(`/rooms/${roomId}/messages`, { method: 'GET' })
         .then((data) => {
-          setRoomMessages(data);
-          messagesCacheRef.current.rooms[roomId] = data;
+          setRoomMessages(data.messages);
+          messagesCacheRef.current.rooms[roomId] = data.messages;
         })
         .catch(() => {});
     }, 20000);
@@ -382,12 +457,20 @@ function DashboardInner() {
   useEffect(() => {
     const el = chatRef.current;
     if (!el) return;
-    const scrollToBottom = () => {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    };
-    requestAnimationFrame(scrollToBottom);
-    setTimeout(scrollToBottom, 80);
-  }, [messages, roomMessages]);
+
+    // При открытии чата/комнаты — сразу прыгаем вниз (без анимации)
+    if (pendingJumpToBottomRef.current) {
+      pendingJumpToBottomRef.current = false;
+      requestAnimationFrame(() => scrollChatToBottom('auto'));
+      return;
+    }
+
+    // Поведение как в Telegram: если пользователь "внизу" — держим чат внизу,
+    // иначе не перетаскиваем экран при приходе новых сообщений.
+    if (shouldStickToBottomRef.current) {
+      requestAnimationFrame(() => scrollChatToBottom('auto'));
+    }
+  }, [messages, roomMessages, scrollChatToBottom]);
 
   useEffect(() => {
     if (!user?.id || !connections.length) return;
@@ -398,8 +481,8 @@ function DashboardInner() {
       const results = await Promise.all(
         connections.map(async (connection) => {
           try {
-            const thread = await api<Message[]>(`/messages?with=${connection.user.id}`, { method: 'GET' });
-            return { peerId: connection.user.id, thread };
+            const thread = await api<ThreadResponse>(`/messages?with=${connection.user.id}`, { method: 'GET' });
+            return { peerId: connection.user.id, thread: thread.messages };
           } catch {
             return { peerId: connection.user.id, thread: [] as Message[] };
           }
@@ -458,8 +541,8 @@ function DashboardInner() {
       const results = await Promise.all(
         rooms.map(async (room) => {
           try {
-            const thread = await api<RoomMessage[]>(`/rooms/${room.id}/messages`, { method: 'GET' });
-            return { roomId: room.id, thread };
+            const thread = await api<RoomThreadResponse>(`/rooms/${room.id}/messages`, { method: 'GET' });
+            return { roomId: room.id, thread: thread.messages };
           } catch {
             return { roomId: room.id, thread: [] as RoomMessage[] };
           }
@@ -523,6 +606,7 @@ function DashboardInner() {
 
   const chatMessages = useMemo(() => (selectedRoom ? roomMessages : messages), [selectedRoom, roomMessages, messages]);
   const isRoomChat = !!selectedRoom;
+  const isMobileChatOpen = mobileView === 'chat' && !!(selected || selectedRoom);
 
   const groupedMessages: Grouped[] = useMemo(() => {
     const byDate = new Map<string, (Message | RoomMessage)[]>();
@@ -785,7 +869,10 @@ function DashboardInner() {
   if (!user) return null;
 
   return (
-    <main className="app-page-bg relative min-h-screen overflow-hidden text-slate-900 dark:text-slate-50">
+    <main
+      className="app-page-bg relative overflow-hidden text-slate-900 dark:text-slate-50"
+      style={{ minHeight: 'var(--vvh, 100dvh)' }}
+    >
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-0 h-[360px] w-[420px] -translate-x-1/2 rounded-full bg-blue-500/12 blur-[120px]" />
         <div className="absolute bottom-0 left-1/2 h-[320px] w-[300px] -translate-x-1/2 rounded-full bg-cyan-500/8 blur-[120px]" />
@@ -798,7 +885,10 @@ function DashboardInner() {
         />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1360px] flex-col gap-4 px-4 py-5 lg:px-6">
+      <div
+        className="relative z-10 mx-auto flex w-full max-w-[1360px] flex-col gap-3 px-3 pt-3 pb-4 lg:gap-4 lg:px-6 lg:py-5"
+        style={{ minHeight: 'var(--vvh, 100dvh)' }}
+      >
         <div className={`hidden items-center gap-3 rounded-[30px] px-6 py-4 backdrop-blur-xl lg:flex ${
           isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.04)]'
@@ -815,38 +905,59 @@ function DashboardInner() {
           />
         </div>
 
-        <div className="grid min-h-[calc(100vh-7.5rem)] grid-cols-1 gap-5 lg:grid-cols-[352px,1fr]">
-        {/* Mobile header */}
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl p-2 backdrop-blur sm:p-4 lg:hidden ${
-          isDarkTheme
-            ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8)]'
-            : 'bg-white/85 shadow-[0_18px_40px_-30px_rgba(148,163,184,0.45)]'
-        }`}>
-          <div className="flex items-center gap-3">
-            {renderAvatar({
-              name: user?.name,
-              email: user?.email,
-              photo: profilePhoto,
-              userId: user?.id,
-              className: 'h-11 w-11 rounded-xl shadow-lg shadow-blue-500/20',
-            })}
-            <div>
-              <div className="max-w-[140px] truncate text-sm font-semibold text-slate-900 dark:text-white">{user?.name || user?.email}</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">{isEn ? 'Online' : 'Онлайн'}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/profile"
-              className="rounded-full bg-slate-900/5 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-900/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:px-3 sm:py-1.5 sm:text-sm"
-            >
-              {isEn ? 'Profile' : 'Профиль'}
-            </Link>
+        <div
+          className="grid grid-cols-1 gap-4 lg:gap-5 lg:grid-cols-[352px,1fr]"
+          style={{ minHeight: 'calc(var(--vvh, 100dvh) - 7.25rem)' }}
+        >
+        {/* Mobile header (Telegram-like): sticky, компактный */}
+        <div
+          className="lg:hidden sticky top-0 z-30 -mx-3 px-3 pb-2"
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top) + 0.25rem)',
+            background: isDarkTheme ? 'rgba(2,6,23,0.75)' : 'rgba(243,246,251,0.72)',
+            backdropFilter: 'blur(16px)',
+          }}
+        >
+          <div className="flex items-center justify-between gap-3 px-1">
             <button
-              onClick={() => logout()}
-              className="rounded-full bg-rose-500/8 px-2 py-1 text-xs text-rose-200 transition hover:bg-rose-500/12 sm:px-3 sm:py-1.5 sm:text-sm"
+              type="button"
+              onClick={() => router.push('/profile')}
+              className="shrink-0 rounded-2xl p-0.5"
+              aria-label={isEn ? 'Open profile' : 'Открыть профиль'}
             >
-              {isEn ? 'Logout' : 'Выход'}
+              {renderAvatar({
+                name: user?.name,
+                email: user?.email,
+                photo: profilePhoto,
+                userId: user?.id,
+                className: 'h-10 w-10 rounded-2xl shadow-lg shadow-blue-500/15',
+              })}
+            </button>
+
+            <div className="min-w-0 flex-1 text-center">
+              <div className="text-[17px] font-semibold tracking-tight text-slate-900 dark:text-white">
+                {isEn ? 'Chats' : 'Чаты'}
+              </div>
+              <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                {user?.name || user?.email}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                mobileSearchRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                setTimeout(() => mobileSearchRef.current?.focus(), 150);
+              }}
+              className={`shrink-0 rounded-2xl p-2 transition ${
+                isDarkTheme ? 'text-slate-200 hover:bg-white/10' : 'text-slate-700 hover:bg-slate-900/5'
+              }`}
+              aria-label={isEn ? 'Search' : 'Поиск'}
+              title={isEn ? 'Search' : 'Поиск'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
+              </svg>
             </button>
           </div>
         </div>
@@ -855,14 +966,14 @@ function DashboardInner() {
         <section className={`
           w-full lg:w-[352px] flex-shrink-0
           ${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'}
-          flex-col overflow-hidden rounded-[34px] p-4 backdrop-blur-xl
+          flex-col overflow-hidden rounded-[26px] p-3 backdrop-blur-xl sm:p-4 lg:rounded-[34px] lg:p-4
           ${isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
             : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
           }
         `}>
-          <div className={`flex min-h-full flex-col rounded-[28px] p-4 ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-50/60'}`}>
-            <div className={`mb-5 flex items-center gap-3 rounded-[20px] px-4 py-3.5 ${
+          <div className={`flex min-h-full flex-col rounded-[22px] p-3 sm:p-4 lg:rounded-[28px] ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-50/60'}`}>
+            <div className={`mb-3 flex items-center gap-3 rounded-[18px] px-3 py-2.5 sm:mb-5 sm:rounded-[20px] sm:px-4 sm:py-3.5 ${
               isDarkTheme
                 ? 'bg-slate-900/72 shadow-[0_16px_34px_-30px_rgba(0,0,0,0.56)]'
                 : 'bg-white/96 shadow-[0_14px_30px_-24px_rgba(148,163,184,0.32)]'
@@ -871,6 +982,7 @@ function DashboardInner() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
               </svg>
               <input
+                ref={mobileSearchRef}
                 className="w-full bg-transparent text-[15px] text-slate-900 placeholder:text-slate-500 outline-none dark:text-white"
                 placeholder={isEn ? 'Search' : 'Поиск'}
                 value={search}
@@ -1098,15 +1210,22 @@ function DashboardInner() {
         </section>
 
         {/* Chat panel */}
-        <section className={`
-          relative flex-1 flex-col
+        <section
+          className={`
+          ${isMobileChatOpen ? 'fixed inset-0 z-40 flex' : 'relative flex-1'}
+          flex-col
           ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}
-          overflow-hidden rounded-[34px] backdrop-blur-2xl min-h-[560px] max-h-[calc(100vh-5rem)]
+          overflow-hidden ${isMobileChatOpen ? 'rounded-none' : 'rounded-[34px]'} backdrop-blur-2xl min-h-[560px] max-h-[calc(100dvh-5rem)]
           ${isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
             : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
           }
-        `}>
+        `}
+          style={{
+            maxHeight: isMobileChatOpen ? 'var(--vvh, 100dvh)' : 'calc(var(--vvh, 100dvh) - 5rem)',
+            height: isMobileChatOpen ? 'var(--vvh, 100dvh)' : undefined,
+          }}
+        >
           {selected || selectedRoom ? (
             <div className={`mx-auto flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[28px] ${isDarkTheme ? 'bg-slate-950/56' : 'bg-slate-50/62'}`}>
               <div className={`flex shrink-0 items-center gap-4 px-7 py-6 ${
@@ -1148,7 +1267,10 @@ function DashboardInner() {
                 </div>
               </div>
 
-              <div ref={chatRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-8">
+              <div
+                ref={chatRef}
+                className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-8 overscroll-contain"
+              >
                 <div className="mx-auto w-full max-w-[720px] space-y-6">
                   {isRoomChat ? (
                     loadingRoomMessages && roomMessages.length === 0 ? (
@@ -1327,7 +1449,12 @@ function DashboardInner() {
                                 )}
                                 <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
                                   <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                  {isMine && <MessageStatus status="sent" className="text-white/80" />}
+                                  {isMine && (
+                                    <MessageStatus
+                                      status={(m as Message).readAt ? 'read' : 'sent'}
+                                      className="text-white/80"
+                                    />
+                                  )}
                                 </div>
                               </div>
                               {isMine && (
@@ -1354,11 +1481,19 @@ function DashboardInner() {
                 </div>
               </div>
 
-              <form onSubmit={sendMessage} className={`shrink-0 px-7 py-5 ${
+              <form
+                onSubmit={sendMessage}
+                className={`shrink-0 px-7 py-5 ${
                 isDarkTheme
                   ? 'bg-slate-900/84 shadow-[0_-14px_30px_-28px_rgba(0,0,0,0.62)]'
                   : 'bg-white/74 shadow-[0_-14px_30px_-28px_rgba(148,163,184,0.24)]'
-              }`}>
+              }`}
+                style={{
+                  paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px) + ${
+                    isMobileChatOpen ? 'var(--mobile-tabbar-h, 72px)' : '0px'
+                  })`,
+                }}
+              >
                 <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3">
                   {attachment && (
                     <div className="flex items-center justify-between gap-3 rounded-[20px] bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_12px_24px_-20px_rgba(148,163,184,0.32)] dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_14px_28px_-22px_rgba(0,0,0,0.72)]">

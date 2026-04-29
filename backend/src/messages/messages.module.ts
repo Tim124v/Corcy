@@ -9,5 +9,6 @@ import { ChatModule } from '../chat/chat.module.js';
   imports: [AuthModule, ChatModule],
   controllers: [MessagesController],
   providers: [MessagesService, UploadService],
+  exports: [UploadService],
 })
 export class MessagesModule {}

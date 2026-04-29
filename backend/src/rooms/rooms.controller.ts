@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { RoomsService } from './rooms.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { ReqUser } from '../auth/req-user.decorator.js';
@@ -34,8 +34,16 @@ export class RoomsController {
   }
 
   @Get(':id/messages')
-  async messages(@ReqUser() user: { id: string }, @Param('id') id: string) {
-    return this.rooms.listMessages(user.id, id);
+  async messages(
+    @ReqUser() user: { id: string },
+    @Param('id') id: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.rooms.listMessages(user.id, id, {
+      before,
+      limit: limit ? Math.min(parseInt(limit, 10), 100) : 50,
+    });
   }
 
   @Post(':id/messages')

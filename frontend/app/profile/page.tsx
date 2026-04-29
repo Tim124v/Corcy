@@ -54,6 +54,7 @@ type UserProfile = {
 type MessageSummary = {
   id: string;
 };
+type ThreadSummaryResponse = { messages: MessageSummary[]; hasMore: boolean; nextCursor?: string };
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -106,12 +107,16 @@ export default function ProfilePage() {
       const [roomThreads, directThreads] = await Promise.all([
         Promise.all(
           roomsList.map((room) =>
-            api<MessageSummary[]>(`/rooms/${room.id}/messages`, { method: 'GET' }).catch(() => []),
+            api<ThreadSummaryResponse>(`/rooms/${room.id}/messages`, { method: 'GET' })
+              .then((res) => res.messages)
+              .catch(() => []),
           ),
         ),
         Promise.all(
           connectionsList.map((connection) =>
-            api<MessageSummary[]>(`/messages?with=${connection.user.id}`, { method: 'GET' }).catch(() => []),
+            api<ThreadSummaryResponse>(`/messages?with=${connection.user.id}`, { method: 'GET' })
+              .then((res) => res.messages)
+              .catch(() => []),
           ),
         ),
       ]);
@@ -180,7 +185,7 @@ export default function ProfilePage() {
       formData.append('file', file);
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res = await fetch(`${apiUrl}/messages/upload`, {
+      const res = await fetch(`${apiUrl}/users/me/avatar`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -193,8 +198,8 @@ export default function ProfilePage() {
         throw new Error(text || `Upload failed (${res.status})`);
       }
 
-      const data = await (res.json() as Promise<{ url: string }>);
-      setAvatarDraft(data.url);
+      const data = await (res.json() as Promise<{ avatarUrl: string }>);
+      setAvatarDraft(data.avatarUrl);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Avatar upload error:', err);
@@ -239,6 +244,67 @@ export default function ProfilePage() {
               onStatusChange={updateAccountStatus}
             />
           </div>
+
+          {/* Mobile меню как в Telegram: всё в Профиле */}
+          <section className="app-shell-card rounded-[24px] p-4 sm:p-6 lg:hidden">
+            <h2 className="mb-4 text-lg font-semibold text-slate-950 dark:text-white">
+              {language === 'en' ? 'Menu' : 'Меню'}
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => router.push('/rooms')}
+                className="app-shell-muted flex items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-white/90 dark:hover:bg-white/[0.06]"
+              >
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  {language === 'en' ? 'Rooms' : 'Комнаты'}
+                </span>
+                <span className="text-slate-400">→</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/invites')}
+                className="app-shell-muted flex items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-white/90 dark:hover:bg-white/[0.06]"
+              >
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  {language === 'en' ? 'Invites' : 'Приглашения'}
+                </span>
+                <span className="text-slate-400">→</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/notifications')}
+                className="app-shell-muted flex items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-white/90 dark:hover:bg-white/[0.06]"
+              >
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  {language === 'en' ? 'Notifications' : 'Уведомления'}
+                </span>
+                <span className="text-slate-400">→</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/settings')}
+                className="app-shell-muted flex items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-white/90 dark:hover:bg-white/[0.06]"
+              >
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  {language === 'en' ? 'Settings' : 'Настройки'}
+                </span>
+                <span className="text-slate-400">→</span>
+              </button>
+              {user.isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => router.push('/admin/waitlist')}
+                  className="app-shell-muted flex items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-white/90 dark:hover:bg-white/[0.06] sm:col-span-2"
+                >
+                  <span className="text-sm font-semibold text-rose-600 dark:text-rose-300">
+                    {language === 'en' ? 'Waitlist' : 'Вейтлист'}
+                  </span>
+                  <span className="text-slate-400">→</span>
+                </button>
+              )}
+            </div>
+          </section>
 
           <div>
             <StatisticsPanel

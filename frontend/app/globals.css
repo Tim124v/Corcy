@@ -6,6 +6,16 @@ html, body, #__next {
   height: 100%;
 }
 
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
+:root {
+  --mobile-tabbar-h: 72px;
+}
+
 body {
   background:
     radial-gradient(circle at top left, rgba(59, 130, 246, 0.06), transparent 26%),

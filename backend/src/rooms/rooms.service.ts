@@ -130,27 +130,43 @@ export class RoomsService {
     if (!member) throw new ForbiddenException('Нет доступа к комнате');
   }
 
-  async listMessages(userId: string, roomId: string) {
+  async listMessages(userId: string, roomId: string, opts?: { before?: string; limit?: number }) {
     await this.cleanupExpired();
     await this.ensureMember(userId, roomId);
+
+    const limit = Math.min(opts?.limit ?? 50, 100);
+
     const messages = await this.prisma.roomMessage.findMany({
-      where: { roomId },
-      orderBy: { createdAt: 'asc' },
+      where: {
+        roomId,
+        ...(opts?.before ? { id: { lt: opts.before } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
       include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
-      take: 200,
     });
+
+    messages.reverse();
+
+    const hasMore = messages.length === limit;
+    const nextCursor = hasMore ? messages[0]?.id : undefined;
+
     const decrypted = mapMessagesText(messages) as RoomMessageWithSender[];
-    return decrypted.map((m) => ({
-      id: m.id,
-      text: m.text,
-      senderId: m.senderId,
-      systemEventType: m.systemEventType ?? undefined,
-      attachmentUrl: m.attachmentUrl ?? undefined,
-      attachmentName: m.attachmentName ?? undefined,
-      attachmentType: m.attachmentType ?? undefined,
-      createdAt: m.createdAt,
-      sender: m.sender,
-    }));
+    return {
+      messages: decrypted.map((m) => ({
+        id: m.id,
+        text: m.text,
+        senderId: m.senderId,
+        systemEventType: m.systemEventType ?? undefined,
+        attachmentUrl: m.attachmentUrl ?? undefined,
+        attachmentName: m.attachmentName ?? undefined,
+        attachmentType: m.attachmentType ?? undefined,
+        createdAt: m.createdAt,
+        sender: m.sender,
+      })),
+      hasMore,
+      nextCursor,
+    };
   }
 
   async sendMessage(
