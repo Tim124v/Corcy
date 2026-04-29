@@ -608,6 +608,15 @@ function DashboardInner() {
   const isRoomChat = !!selectedRoom;
   const isMobileChatOpen = mobileView === 'chat' && !!(selected || selectedRoom);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isMobileChatOpen) document.documentElement.dataset.chatOpen = '1';
+    else delete document.documentElement.dataset.chatOpen;
+    return () => {
+      delete document.documentElement.dataset.chatOpen;
+    };
+  }, [isMobileChatOpen]);
+
   const groupedMessages: Grouped[] = useMemo(() => {
     const byDate = new Map<string, (Message | RoomMessage)[]>();
     chatMessages.forEach((m) => {
@@ -1227,7 +1236,11 @@ function DashboardInner() {
           }}
         >
           {selected || selectedRoom ? (
-            <div className={`mx-auto flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[28px] ${isDarkTheme ? 'bg-slate-950/56' : 'bg-slate-50/62'}`}>
+            <div
+              className={`flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden ${
+                isMobileChatOpen ? 'rounded-none' : 'mx-auto rounded-[28px]'
+              } ${isDarkTheme ? 'bg-slate-950/56' : 'bg-slate-50/62'}`}
+            >
               <div className={`flex shrink-0 items-center gap-4 px-7 py-6 ${
                 isDarkTheme
                   ? 'bg-slate-900/84 shadow-[0_16px_34px_-26px_rgba(0,0,0,0.62)]'

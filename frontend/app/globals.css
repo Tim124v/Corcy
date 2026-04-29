@@ -16,6 +16,14 @@ body {
   --mobile-tabbar-h: 72px;
 }
 
+html[data-chat-open="1"] {
+  --mobile-tabbar-h: 0px;
+}
+
+html[data-chat-open="1"] .mobile-tabbar {
+  display: none;
+}
+
 body {
   background:
     radial-gradient(circle at top left, rgba(59, 130, 246, 0.06), transparent 26%),
