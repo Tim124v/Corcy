@@ -150,7 +150,7 @@ export function MobileTabBar() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-slate-950/92 text-slate-200 backdrop-blur-xl lg:hidden"
+      className="mobile-tabbar fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-slate-950/92 text-slate-200 backdrop-blur-xl lg:hidden"
       style={{
         paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.25rem)',
       }}
