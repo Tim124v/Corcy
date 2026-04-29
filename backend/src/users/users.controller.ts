@@ -1,62 +1,46 @@
-import { BadRequestException, Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { ReqUser } from '../auth/req-user.decorator.js';
-import { hashPassword, verifyPassword } from '../security/password.util.js';
 import { ChangePasswordSchema, ChangePasswordDto } from '../auth/auth.schemas.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { UsersService } from './users.service.js';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { UploadService } from '../messages/upload.service.js';
+
+const AVATAR_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   @Get('me/security-log')
   async securityLog(@ReqUser() user: { id: string }) {
-    const logs = await this.prisma.auditLog.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-      select: { id: true, action: true, ipAddress: true, severity: true, createdAt: true },
-    });
-    return { logs };
+    return this.users.getSecurityLog(user.id);
   }
 
   @Get('me')
   async me(@ReqUser() user: { id: string }) {
-    const u = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { id: true, email: true, name: true, avatarUrl: true, createdAt: true, isVerified: true, isAdmin: true },
-    });
-    if (!u) throw new Error('User not found');
-    return u;
+    return this.users.getMe(user.id);
   }
 
   @Patch('me')
   async updateMe(@ReqUser() user: { id: string }, @Body() body: { name?: string; avatarUrl?: string | null }) {
-    if (body.avatarUrl !== undefined && body.avatarUrl !== null && typeof body.avatarUrl !== 'string') {
-      throw new BadRequestException('avatarUrl must be a string or null');
-    }
-    if (body.avatarUrl && body.avatarUrl.startsWith('data:')) {
-      throw new BadRequestException('avatarUrl must be a URL, not a data URI');
-    }
-    if (body.avatarUrl && body.avatarUrl.length > 2048) {
-      throw new BadRequestException('avatarUrl too long');
-    }
-
-    if (body.name !== undefined && body.name !== null) {
-      if (body.name.length > 50) throw new BadRequestException('name too long');
-      body.name = body.name.trim();
-    }
-    const u = await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        name: body.name != null ? body.name : undefined,
-        avatarUrl: body.avatarUrl !== undefined ? body.avatarUrl : undefined,
-      },
-      select: { id: true, email: true, name: true, avatarUrl: true },
-    });
-    return u;
+    return this.users.updateMe(user.id, body);
   }
 
   @Patch('me/password')
@@ -64,35 +48,27 @@ export class UsersController {
     @ReqUser() user: { id: string },
     @Body(new ZodValidationPipe(ChangePasswordSchema)) body: ChangePasswordDto,
   ) {
-    const { currentPassword, newPassword } = body;
-
-    const existing = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { id: true, passwordHash: true },
-    });
-    if (!existing) throw new BadRequestException('Пользователь не найден');
-
-    const isValidCurrent = await verifyPassword(currentPassword, existing.passwordHash);
-    if (!isValidCurrent) {
-      throw new BadRequestException('Текущий пароль неверный');
-    }
-
-    const passwordHash = await hashPassword(newPassword);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash },
-    });
-
-    await this.prisma.auditLog
-      .create({
-        data: {
-          userId: user.id,
-          action: 'PASSWORD_CHANGED',
-          severity: 'MEDIUM',
-        },
-      })
-      .catch(() => {});
-
+    await this.users.changePassword(user.id, body.currentPassword, body.newPassword);
     return { ok: true };
+  }
+
+  @Post('me/avatar')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      fileFilter: (_req, file, cb) => {
+        if (AVATAR_MIME_TYPES.has(file.mimetype)) return cb(null, true);
+        cb(new BadRequestException(`Тип файла ${file.mimetype} не разрешён для аватара`) as unknown as Error, false);
+      },
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  async uploadAvatar(@ReqUser() user: { id: string }, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('file is required');
+
+    const result = await this.uploadService.upload(file.buffer, file.originalname, file.mimetype);
+    await this.users.updateMe(user.id, { avatarUrl: result.url });
+
+    return { avatarUrl: result.url };
   }
 }

@@ -10,19 +10,62 @@ export class MessagesService {
     private readonly chatGateway: ChatGateway,
   ) {}
 
-  async getThread(currentUserId: string, peerId: string) {
+  async getThread(
+    currentUserId: string,
+    peerId: string,
+    opts?: { before?: string; limit?: number },
+  ) {
     if (!peerId) throw new BadRequestException('peerId is required');
+
+    const limit = Math.min(opts?.limit ?? 50, 100);
+    const where = {
+      OR: [
+        { senderId: currentUserId, recipientId: peerId },
+        { senderId: peerId, recipientId: currentUserId },
+      ],
+      ...(opts?.before ? { id: { lt: opts.before } } : {}),
+    };
+
     const rows = await this.prisma.message.findMany({
-      where: {
-        OR: [
-          { senderId: currentUserId, recipientId: peerId },
-          { senderId: peerId, recipientId: currentUserId },
-        ],
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 200,
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
     });
-    return mapMessagesText(rows);
+
+    rows.reverse();
+
+    const hasMore = rows.length === limit;
+    const nextCursor = hasMore ? rows[0]?.id : undefined;
+
+    return {
+      messages: mapMessagesText(rows),
+      hasMore,
+      nextCursor,
+    };
+  }
+
+  async markAsRead(currentUserId: string, messageId: string): Promise<{ ok: boolean }> {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, recipientId: true, senderId: true, readAt: true },
+    });
+
+    if (!message) throw new NotFoundException('Message not found');
+    if (message.recipientId !== currentUserId) throw new ForbiddenException('Not your message');
+    if (message.readAt) return { ok: true };
+
+    const readAt = new Date();
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: { readAt },
+    });
+
+    this.chatGateway.sendToUser(message.senderId, 'messageRead', {
+      messageId,
+      readAt: readAt.toISOString(),
+    });
+
+    return { ok: true };
   }
 
   async send(

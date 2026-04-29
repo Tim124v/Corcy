@@ -8,6 +8,7 @@ type MessageHandler = (data: unknown) => void;
 export function useSocket(handlers: {
   onNewDirectMessage?: MessageHandler;
   onNewRoomMessage?: MessageHandler;
+  onMessageRead?: (data: { messageId: string; readAt: string }) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }) {
@@ -30,11 +31,14 @@ export function useSocket(handlers: {
     const onDisconnect = (reason: string) => handlersRef.current.onDisconnect?.();
     const onNewDirectMessage = (data: unknown) => handlersRef.current.onNewDirectMessage?.(data);
     const onNewRoomMessage = (data: unknown) => handlersRef.current.onNewRoomMessage?.(data);
+    const onMessageRead = (data: unknown) =>
+      handlersRef.current.onMessageRead?.(data as { messageId: string; readAt: string });
 
     if (handlersRef.current.onConnect) socket.on('connect', onConnect);
     if (handlersRef.current.onDisconnect) socket.on('disconnect', onDisconnect);
     if (handlersRef.current.onNewDirectMessage) socket.on('newDirectMessage', onNewDirectMessage);
     if (handlersRef.current.onNewRoomMessage) socket.on('newRoomMessage', onNewRoomMessage);
+    if (handlersRef.current.onMessageRead) socket.on('messageRead', onMessageRead);
 
     if (socket.connected) handlersRef.current.onConnect?.();
 
@@ -44,6 +48,7 @@ export function useSocket(handlers: {
       if (handlersRef.current.onDisconnect) socket.off('disconnect', onDisconnect);
       if (handlersRef.current.onNewDirectMessage) socket.off('newDirectMessage', onNewDirectMessage);
       if (handlersRef.current.onNewRoomMessage) socket.off('newRoomMessage', onNewRoomMessage);
+      if (handlersRef.current.onMessageRead) socket.off('messageRead', onMessageRead);
     };
   }, []); // Только при монтировании
 

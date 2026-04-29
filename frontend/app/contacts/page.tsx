@@ -300,20 +300,20 @@ export default function ContactsPage() {
               {filteredConnections.map((connection) => (
                 <div
                   key={connection.id}
-                  className="app-soft-panel rounded-[22px] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-[0_18px_38px_-28px_rgba(59,130,246,0.32)]"
+                  className="app-soft-panel overflow-hidden rounded-[22px] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-[0_18px_38px_-28px_rgba(59,130,246,0.32)]"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3 overflow-hidden">
                     <Avatar
                       name={connection.user.name || connection.user.email}
                       src={connection.user.avatarUrl ?? null}
                       size="lg"
-                      className="w-12 h-12"
+                      className="h-12 w-12 shrink-0"
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[15px] font-semibold text-slate-950 dark:text-white">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <div className="max-w-full truncate text-[15px] font-semibold text-slate-950 dark:text-white">
                         {connection.user.name || connection.user.email}
                       </div>
-                      <div className="truncate text-[13px] text-slate-500 dark:text-slate-400">
+                      <div className="max-w-full truncate text-[13px] text-slate-500 dark:text-slate-400">
                         {connection.user.email}
                       </div>
                     </div>
@@ -325,7 +325,7 @@ export default function ContactsPage() {
                         setConfirmDelete(connection);
                       }}
                       disabled={deletingId === connection.id}
-                      className="shrink-0 rounded-full bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-500/15 disabled:opacity-60 dark:bg-rose-500/15 dark:text-rose-200 dark:hover:bg-rose-500/25"
+                      className="shrink-0 whitespace-nowrap rounded-full bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-500/15 disabled:opacity-60 dark:bg-rose-500/15 dark:text-rose-200 dark:hover:bg-rose-500/25"
                       aria-label={isEn ? 'Remove contact' : 'Удалить контакт'}
                       title={isEn ? 'Remove contact' : 'Удалить контакт'}
                     >

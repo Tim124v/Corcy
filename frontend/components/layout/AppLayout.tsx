@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '../sidebar/Sidebar';
 import { useAuthStore } from '../../store/auth';
+import { MobileTabBar } from '../nav/MobileTabBar';
 
 type AppLayoutProps = {
   children: React.ReactNode;
@@ -28,25 +29,19 @@ export function AppLayout({ children }: AppLayoutProps) {
         />
       )}
 
-      {/* Mobile menu button */}
-      {shouldShowSidebar && (
-        <button
-          type="button"
-          onClick={() => setSidebarOpen(true)}
-          className="fixed left-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/90 dark:bg-slate-800 text-white shadow-lg backdrop-blur-sm border border-white/10 lg:hidden"
-          aria-label="Open menu"
-        >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-      )}
+      {/* Desktop sidebar toggle (only if needed later) */}
 
       <main className={`min-h-screen transition-all duration-300 ${shouldShowSidebar ? 'lg:ml-[280px]' : ''}`}>
-        <div className={`min-h-screen px-4 pb-8 ${shouldShowSidebar ? 'pt-16 lg:px-8 lg:pt-8' : 'pt-0 lg:px-0 lg:pt-0'}`}>
+        <div
+          className={`min-h-screen px-4 ${
+            shouldShowSidebar ? 'pt-4 pb-28 lg:px-8 lg:pt-8 lg:pb-8' : 'pt-0 pb-8 lg:px-0 lg:pt-0'
+          }`}
+        >
           {children}
         </div>
       </main>
+
+      {shouldShowSidebar && <MobileTabBar />}
     </div>
   );
 }
