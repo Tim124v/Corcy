@@ -38,7 +38,28 @@ export class TokenRefreshService {
     const tokenHash = createHash('sha256').update(rawRefresh).digest('hex');
     const expiresAt = new Date(Date.now() + this.refreshDays() * 24 * 60 * 60 * 1000);
 
-    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    // Чистим только истёкшие токены этого пользователя (не все!)
+    await this.prisma.refreshToken.deleteMany({
+      where: {
+        userId,
+        expiresAt: { lt: new Date() },
+      },
+    });
+
+    // Ограничиваем: максимум 10 активных устройств на пользователя
+    const activeTokens = await this.prisma.refreshToken.findMany({
+      where: { userId },
+      orderBy: { expiresAt: 'asc' },
+      select: { tokenHash: true },
+    });
+
+    if (activeTokens.length >= 10) {
+      // Удаляем самый старый токен
+      await this.prisma.refreshToken.delete({
+        where: { tokenHash: activeTokens[0]!.tokenHash },
+      });
+    }
+
     await this.prisma.refreshToken.create({
       data: {
         userId,

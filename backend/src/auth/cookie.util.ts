@@ -10,7 +10,7 @@ export const REFRESH_COOKIE_OPTIONS = {
   secure: IS_PRODUCTION,
   sameSite: (IS_PRODUCTION ? 'none' : 'lax') as 'none' | 'lax' | 'strict',
   maxAge: Number(process.env.JWT_REFRESH_EXPIRES_DAYS || 7) * 24 * 60 * 60 * 1000,
-  path: '/auth',
+  path: '/',
 };
 
 export function setRefreshCookie(res: Response, refreshToken: string): void {
@@ -22,6 +22,6 @@ export function clearRefreshCookie(res: Response): void {
     httpOnly: true,
     secure: IS_PRODUCTION,
     sameSite: REFRESH_COOKIE_OPTIONS.sameSite,
-    path: '/auth',
+    path: '/',
   });
 }
