@@ -4,23 +4,31 @@ import { useEffect } from 'react';
 
 export function useMobileViewport() {
   useEffect(() => {
-    const setVh = () => {
-      const vh = (window.visualViewport?.height ?? window.innerHeight) * 0.01;
-      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    if (typeof window === 'undefined') return;
+
+    const root = document.documentElement;
+
+    const update = () => {
+      // visualViewport.height = высота экрана МИНУС клавиатура
+      // Именно это нужно чтобы инпут сидел вплотную к клавиатуре
+      const height = window.visualViewport?.height ?? window.innerHeight;
+      const offsetTop = window.visualViewport?.offsetTop ?? 0;
+
+      root.style.setProperty('--vh', `${height * 0.01}px`);
+      root.style.setProperty('--vp-height', `${height}px`);
+      root.style.setProperty('--vp-offset', `${offsetTop}px`);
     };
 
-    setVh();
+    update();
 
-    window.visualViewport?.addEventListener('resize', setVh);
-    window.visualViewport?.addEventListener('scroll', setVh);
-    window.addEventListener('resize', setVh);
-    window.addEventListener('orientationchange', setVh);
+    window.visualViewport?.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('scroll', update);
+    window.addEventListener('orientationchange', update);
 
     return () => {
-      window.visualViewport?.removeEventListener('resize', setVh);
-      window.visualViewport?.removeEventListener('scroll', setVh);
-      window.removeEventListener('resize', setVh);
-      window.removeEventListener('orientationchange', setVh);
+      window.visualViewport?.removeEventListener('resize', update);
+      window.visualViewport?.removeEventListener('scroll', update);
+      window.removeEventListener('orientationchange', update);
     };
   }, []);
 }

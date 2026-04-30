@@ -941,7 +941,7 @@ function DashboardInner() {
   return (
     <main
       className="app-page-bg relative overflow-hidden text-slate-900 dark:text-slate-50"
-      style={{ height: 'calc(var(--vh, 1vh) * 100)' }}
+      style={{ height: 'var(--vp-height, 100dvh)' }}
     >
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-0 h-[360px] w-[420px] -translate-x-1/2 rounded-full bg-blue-500/12 blur-[120px]" />
@@ -1681,6 +1681,11 @@ function DashboardInner() {
 
                     <input
                       className="min-w-0 flex-1 bg-transparent text-xs placeholder:text-slate-500 outline-none sm:text-sm"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="sentences"
+                      spellCheck={false}
+                      inputMode="text"
                       style={{ fontSize: '16px' }}
                       value={messageText}
                       onChange={(e) => {
