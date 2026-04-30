@@ -244,3 +244,25 @@ body {
   }
 }
 
+/* ─── Mobile Safari fix ─────────────────────────────────────── */
+
+html, body {
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
+
+/* Реальный vh с учётом адресной строки Safari */
+:root {
+  --vh: 1vh;
+}
+
+/* Safe area для iPhone с чёлкой */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.h-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+

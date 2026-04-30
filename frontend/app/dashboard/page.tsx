@@ -9,6 +9,7 @@ import { getAccessToken, useAuthStore } from '../../store/auth';
 import { useLanguage } from '../../components/language-provider';
 import { useTheme } from '../../components/theme-provider';
 import { useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
+import { useMobileViewport } from '../../hooks/use-mobile-viewport';
 import { useNotificationsStore } from '../../store/notifications';
 import { useChatActivityStore } from '../../store/chat-activity';
 import { useBrowserNotifications } from '../../hooks/use-browser-notifications';
@@ -178,6 +179,7 @@ function DashboardInner() {
   const { user, accessToken, hydrated } = useAuthStore();
   const { language } = useLanguage();
   const { theme } = useTheme();
+  useMobileViewport();
   const addNotification = useNotificationsStore((s) => s.addNotification);
   const unreadDirectIds = useChatActivityStore((s) => s.unreadDirectIds);
   const unreadRoomIds = useChatActivityStore((s) => s.unreadRoomIds);
@@ -220,9 +222,55 @@ function DashboardInner() {
   const [creatingLink, setCreatingLink] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'failed'>('idle');
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [deleteActionMessageId, setDeleteActionMessageId] = useState<string | null>(null);
+  const [desktopMenuMessageId, setDesktopMenuMessageId] = useState<string | null>(null);
   const lastKnownIncomingDirectRef = useRef<Record<string, string>>({});
   const lastKnownIncomingRoomRef = useRef<Record<string, string>>({});
   const messagesCacheRef = useRef<{ rooms: Record<string, RoomMessage[]>; direct: Record<string, Message[]> }>({ rooms: {}, direct: {} });
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressDidFireRef = useRef(false);
+
+  const openDeleteActions = useCallback((messageId: string) => {
+    setDeleteActionMessageId(messageId);
+  }, []);
+
+  const closeDeleteActions = useCallback(() => {
+    setDeleteActionMessageId(null);
+  }, []);
+
+  const closeDesktopMenu = useCallback(() => {
+    setDesktopMenuMessageId(null);
+  }, []);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }, []);
+
+  const onMessagePointerDown = useCallback(
+    (messageId: string) => (e: React.PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      longPressDidFireRef.current = false;
+      cancelLongPress();
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressDidFireRef.current = true;
+        openDeleteActions(messageId);
+      }, 450);
+    },
+    [cancelLongPress, openDeleteActions],
+  );
+
+  const onMessagePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      cancelLongPress();
+      if (e.pointerType === 'touch' && longPressDidFireRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        longPressDidFireRef.current = false;
+      }
+    },
+    [cancelLongPress],
+  );
 
   const scrollChatToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = chatRef.current;
@@ -617,6 +665,19 @@ function DashboardInner() {
     };
   }, [isMobileChatOpen]);
 
+  useEffect(() => () => cancelLongPress(), [cancelLongPress]);
+
+  useEffect(() => {
+    if (!desktopMenuMessageId) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('[data-desktop-msg-menu="1"]')) return;
+      closeDesktopMenu();
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [closeDesktopMenu, desktopMenuMessageId]);
+
   const groupedMessages: Grouped[] = useMemo(() => {
     const byDate = new Map<string, (Message | RoomMessage)[]>();
     chatMessages.forEach((m) => {
@@ -880,7 +941,7 @@ function DashboardInner() {
   return (
     <main
       className="app-page-bg relative overflow-hidden text-slate-900 dark:text-slate-50"
-      style={{ minHeight: 'var(--vvh, 100dvh)' }}
+      style={{ height: 'calc(var(--vh, 1vh) * 100)' }}
     >
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-0 h-[360px] w-[420px] -translate-x-1/2 rounded-full bg-blue-500/12 blur-[120px]" />
@@ -895,8 +956,7 @@ function DashboardInner() {
       </div>
 
       <div
-        className="relative z-10 mx-auto flex w-full max-w-[1360px] flex-col gap-3 px-3 pt-3 pb-4 lg:gap-4 lg:px-6 lg:py-5"
-        style={{ minHeight: 'var(--vvh, 100dvh)' }}
+        className="relative z-10 mx-auto flex h-full w-full max-w-[1360px] flex-col gap-3 px-3 pt-3 pb-4 lg:gap-4 lg:px-6 lg:py-5"
       >
         <div className={`hidden items-center gap-3 rounded-[30px] px-6 py-4 backdrop-blur-xl lg:flex ${
           isDarkTheme
@@ -915,8 +975,7 @@ function DashboardInner() {
         </div>
 
         <div
-          className="grid grid-cols-1 gap-4 lg:gap-5 lg:grid-cols-[352px,1fr]"
-          style={{ minHeight: 'calc(var(--vvh, 100dvh) - 7.25rem)' }}
+          className="grid h-full overflow-hidden grid-cols-1 gap-4 lg:gap-5 lg:grid-cols-[352px,1fr]"
         >
         {/* Mobile header (Telegram-like): sticky, компактный */}
         <div
@@ -1422,26 +1481,25 @@ function DashboardInner() {
                                   </div>
                                 )
                               )}
-                              <div className={`group relative ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-3 py-1.5 shadow-sm sm:px-4 sm:py-2 ${
-                                isMine
-                                  ? 'bg-indigo-500 text-white dark:bg-indigo-600'
-                                  : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
-                              }`}>
+                              <div
+                                className={`group ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} flex items-start gap-2`}
+                              >
+                                <div
+                                  className={`relative w-fit rounded-2xl px-3 py-1.5 shadow-sm sm:px-4 sm:py-2 ${
+                                    isMine
+                                      ? 'bg-indigo-500 text-white dark:bg-indigo-600'
+                                      : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
+                                  }`}
+                                  onPointerDown={isMine ? onMessagePointerDown(m.id) : undefined}
+                                  onPointerUp={isMine ? onMessagePointerUp : undefined}
+                                  onPointerCancel={isMine ? cancelLongPress : undefined}
+                                  onPointerMove={isMine ? cancelLongPress : undefined}
+                                >
                                 {!isMine && !isPrevSameSender && senderName && (
                                   <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                                     {senderName}
                                   </div>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => void deleteDirectMessage(m.id)}
-                                  disabled={deletingMessageId === m.id}
-                                  className="absolute right-2 top-2 rounded-full bg-black/5 px-2 py-1 text-[11px] text-slate-500 opacity-100 transition hover:bg-rose-500/15 hover:text-rose-600 dark:bg-white/10 dark:text-slate-400 dark:hover:bg-rose-500/25 md:opacity-0 md:group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-100"
-                                  aria-label={isEn ? 'Delete message' : 'Удалить сообщение'}
-                                  title={isEn ? 'Delete message' : 'Удалить сообщение'}
-                                >
-                                  {deletingMessageId === m.id ? (isEn ? '...' : '...') : '×'}
-                                </button>
                                 {(m as Message).attachmentUrl && (
                                   <div className="space-y-2">
                                     <div className={`text-[11px] font-medium ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
@@ -1469,6 +1527,47 @@ function DashboardInner() {
                                     />
                                   )}
                                 </div>
+                                </div>
+
+                                {isMine && (
+                                  <div className="relative hidden md:flex shrink-0 items-start" data-desktop-msg-menu="1">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDesktopMenuMessageId((prev) => (prev === m.id ? null : m.id));
+                                      }}
+                                      className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/5 text-[14px] leading-none text-slate-600 opacity-0 pointer-events-none transition group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-slate-900/10 hover:text-slate-900 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/15"
+                                      aria-label={isEn ? 'Message actions' : 'Действия'}
+                                      title={isEn ? 'Message actions' : 'Действия'}
+                                    >
+                                      ⋯
+                                    </button>
+
+                                    {desktopMenuMessageId === m.id && (
+                                      <div className="absolute right-0 bottom-full mb-2 z-20 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white/95 text-xs text-slate-900 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100">
+                                        <button
+                                          type="button"
+                                          disabled={deletingMessageId === m.id}
+                                          onClick={async () => {
+                                            closeDesktopMenu();
+                                            await deleteDirectMessage(m.id);
+                                          }}
+                                          className="w-full px-3 py-2.5 text-left font-medium transition hover:bg-rose-500/10 hover:text-rose-700 disabled:opacity-60 dark:hover:bg-rose-500/15 dark:hover:text-rose-200"
+                                        >
+                                          {isEn ? 'Unsend for everyone' : 'Отменить отправку для всех'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={closeDesktopMenu}
+                                          className="w-full px-3 py-2.5 text-left text-slate-600 transition hover:bg-slate-900/5 dark:text-slate-300 dark:hover:bg-white/10"
+                                        >
+                                          {isEn ? 'Cancel' : 'Отмена'}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                               {isMine && (
                                 isNextSameSender ? (
@@ -1496,7 +1595,7 @@ function DashboardInner() {
 
               <form
                 onSubmit={sendMessage}
-                className={`shrink-0 px-7 py-5 ${
+                className={`shrink-0 pb-safe px-7 py-5 ${
                 isDarkTheme
                   ? 'bg-slate-900/84 shadow-[0_-14px_30px_-28px_rgba(0,0,0,0.62)]'
                   : 'bg-white/74 shadow-[0_-14px_30px_-28px_rgba(148,163,184,0.24)]'
@@ -1582,6 +1681,7 @@ function DashboardInner() {
 
                     <input
                       className="min-w-0 flex-1 bg-transparent text-xs placeholder:text-slate-500 outline-none sm:text-sm"
+                      style={{ fontSize: '16px' }}
                       value={messageText}
                       onChange={(e) => {
                         setMessageText(e.target.value);
@@ -1681,6 +1781,39 @@ function DashboardInner() {
         </section>
       </div>
       </div>
+
+      {deleteActionMessageId && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={closeDeleteActions}
+            aria-label={isEn ? 'Close' : 'Закрыть'}
+          />
+          <div className="relative w-full max-w-[560px] rounded-t-3xl bg-white px-4 pb-safe pt-4 shadow-2xl dark:bg-slate-950">
+            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-200 dark:bg-slate-800" />
+            <button
+              type="button"
+              disabled={deletingMessageId === deleteActionMessageId}
+              onClick={async () => {
+                const id = deleteActionMessageId;
+                closeDeleteActions();
+                if (id) await deleteDirectMessage(id);
+              }}
+              className="w-full rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition disabled:opacity-60"
+            >
+              {isEn ? 'Delete for everyone' : 'Удалить сообщение у всех'}
+            </button>
+            <button
+              type="button"
+              onClick={closeDeleteActions}
+              className="mt-3 w-full rounded-2xl bg-slate-900/5 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-900/10 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/15"
+            >
+              {isEn ? 'Cancel' : 'Отмена'}
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
