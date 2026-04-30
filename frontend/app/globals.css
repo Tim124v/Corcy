@@ -266,3 +266,9 @@ html, body {
   height: 100dvh;
 }
 
+/* Скрываем inputAccessoryView (полоса ^ v ✓) в Safari iOS */
+input, textarea {
+  /* Отключает системный тулбар автозаполнения */
+  -webkit-appearance: none;
+}
+
