@@ -6,12 +6,6 @@ html, body, #__next {
   height: 100%;
 }
 
-html,
-body {
-  overflow-x: hidden;
-  overscroll-behavior-x: none;
-}
-
 :root {
   --mobile-tabbar-h: 72px;
 }
@@ -244,31 +238,21 @@ body {
   }
 }
 
-/* ─── Mobile Safari fix ─────────────────────────────────────── */
-
+/* ─── Mobile Safari / Chrome iOS fix ───────────────────────── */
 html, body {
   overflow-x: hidden;
   overscroll-behavior: none;
 }
 
-/* Реальный vh с учётом адресной строки Safari */
 :root {
-  --vh: 1vh;
+  --vvh: 100dvh;
 }
 
-/* Safe area для iPhone с чёлкой */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.h-dvh {
-  height: 100vh;
-  height: 100dvh;
-}
-
-/* Скрываем inputAccessoryView (полоса ^ v ✓) в Safari iOS */
 input, textarea {
-  /* Отключает системный тулбар автозаполнения */
   -webkit-appearance: none;
 }
 
