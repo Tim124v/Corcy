@@ -20,6 +20,7 @@ type AuthState = {
   logout: () => void;
   setHydrated: () => void;
   tryRestoreSession: () => Promise<boolean>;
+  scheduleRefresh: () => () => void;
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -85,6 +86,37 @@ export const useAuthStore = create<AuthState>()(
           set({ user: null, accessToken: null, hydrated: true });
           return false;
         }
+      },
+
+      scheduleRefresh: () => {
+        // access token живёт 15 минут = 900 секунд
+        // обновляем за 2 минуты до истечения = через 13 минут
+        const REFRESH_INTERVAL_MS = 13 * 60 * 1000;
+
+        const timer = setInterval(async () => {
+          const { accessToken } = useAuthStore.getState();
+          if (!accessToken) {
+            clearInterval(timer);
+            return;
+          }
+          try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            const data = (await res.json()) as { ok: boolean; accessToken?: string };
+            if (data.ok && data.accessToken) {
+              useAuthStore.getState().setAccessToken(data.accessToken);
+            } else {
+              clearInterval(timer);
+              useAuthStore.getState().logout();
+            }
+          } catch {
+            // сеть недоступна — не логаутим, попробуем в следующий раз
+          }
+        }, REFRESH_INTERVAL_MS);
+
+        return () => clearInterval(timer);
       },
     }),
     {

@@ -11,10 +11,16 @@ import { SocketProvider } from '../components/socket-provider';
 export default function Providers({ children }: { children: React.ReactNode }) {
   const tryRestoreSession = useAuthStore((s) => s.tryRestoreSession);
   const hydrated = useAuthStore((s) => s.hydrated);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   useEffect(() => {
     void tryRestoreSession();
   }, [tryRestoreSession]);
+
+  useEffect(() => {
+    const stop = useAuthStore.getState().scheduleRefresh();
+    return stop;
+  }, [accessToken]);
 
   if (!hydrated) {
     return (

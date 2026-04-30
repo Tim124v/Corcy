@@ -9,7 +9,6 @@ import { getAccessToken, useAuthStore } from '../../store/auth';
 import { useLanguage } from '../../components/language-provider';
 import { useTheme } from '../../components/theme-provider';
 import { useCurrentUserAvatar } from '../../hooks/use-current-user-avatar';
-import { useMobileViewport } from '../../hooks/use-mobile-viewport';
 import { useNotificationsStore } from '../../store/notifications';
 import { useChatActivityStore } from '../../store/chat-activity';
 import { useBrowserNotifications } from '../../hooks/use-browser-notifications';
@@ -179,7 +178,6 @@ function DashboardInner() {
   const { user, accessToken, hydrated } = useAuthStore();
   const { language } = useLanguage();
   const { theme } = useTheme();
-  useMobileViewport();
   const addNotification = useNotificationsStore((s) => s.addNotification);
   const unreadDirectIds = useChatActivityStore((s) => s.unreadDirectIds);
   const unreadRoomIds = useChatActivityStore((s) => s.unreadRoomIds);
@@ -941,7 +939,7 @@ function DashboardInner() {
   return (
     <main
       className="app-page-bg relative overflow-hidden text-slate-900 dark:text-slate-50"
-      style={{ height: 'var(--vp-height, 100dvh)' }}
+      style={{ height: 'var(--vvh, 100dvh)' }}
     >
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-0 h-[360px] w-[420px] -translate-x-1/2 rounded-full bg-blue-500/12 blur-[120px]" />
@@ -1283,16 +1281,17 @@ function DashboardInner() {
           ${isMobileChatOpen ? 'fixed inset-0 z-40 flex' : 'relative flex-1'}
           flex-col
           ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}
-          overflow-hidden ${isMobileChatOpen ? 'rounded-none' : 'rounded-[34px]'} backdrop-blur-2xl min-h-[560px] max-h-[calc(100dvh-5rem)]
+          overflow-hidden ${isMobileChatOpen ? 'rounded-none' : 'rounded-[34px]'} backdrop-blur-2xl min-h-0 max-h-full flex-1
           ${isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
             : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
           }
         `}
-          style={{
-            maxHeight: isMobileChatOpen ? 'var(--vvh, 100dvh)' : 'calc(var(--vvh, 100dvh) - 5rem)',
-            height: isMobileChatOpen ? 'var(--vvh, 100dvh)' : undefined,
-          }}
+          style={
+            isMobileChatOpen
+              ? undefined
+              : { maxHeight: 'calc(var(--vvh, 100dvh) - 5rem)' }
+          }
         >
           {selected || selectedRoom ? (
             <div
@@ -1681,12 +1680,9 @@ function DashboardInner() {
 
                     <input
                       className="min-w-0 flex-1 bg-transparent text-xs placeholder:text-slate-500 outline-none sm:text-sm"
+                      style={{ fontSize: '16px' }}
                       autoComplete="off"
                       autoCorrect="off"
-                      autoCapitalize="sentences"
-                      spellCheck={false}
-                      inputMode="text"
-                      style={{ fontSize: '16px' }}
                       value={messageText}
                       onChange={(e) => {
                         setMessageText(e.target.value);
