@@ -351,32 +351,6 @@ function DashboardInner() {
   }, [accessToken, joinRoom, router, hydrated]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const setVars = () => {
-      // Реальная видимая высота (iOS Safari + клавиатура)
-      const viewportHeight = Math.round(vv.height);
-      // Нижний inset клавиатуры/оверлея (приблизительно)
-      const keyboardInset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-      document.documentElement.style.setProperty('--vvh', `${viewportHeight}px`);
-      document.documentElement.style.setProperty('--keyboard-inset', `${keyboardInset}px`);
-    };
-
-    setVars();
-    vv.addEventListener('resize', setVars);
-    vv.addEventListener('scroll', setVars);
-    window.addEventListener('orientationchange', setVars);
-
-    return () => {
-      vv.removeEventListener('resize', setVars);
-      vv.removeEventListener('scroll', setVars);
-      window.removeEventListener('orientationchange', setVars);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!selected && !selectedRoom) setMobileView('list');
   }, [selected, selectedRoom]);
 
@@ -660,6 +634,35 @@ function DashboardInner() {
     else delete document.documentElement.dataset.chatOpen;
     return () => {
       delete document.documentElement.dataset.chatOpen;
+    };
+  }, [isMobileChatOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const setVars = () => {
+      const viewportHeight = Math.round(vv.height);
+      document.documentElement.style.setProperty('--vvh', `${viewportHeight}px`);
+      // keyboard-inset = 0 потому что inputAccessoryView Safari уже включён в vv.height
+      document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      // таббар скрываем когда чат открыт на весь экран
+      document.documentElement.style.setProperty(
+        '--mobile-tabbar-h',
+        isMobileChatOpen ? '0px' : '72px',
+      );
+    };
+
+    setVars();
+    vv.addEventListener('resize', setVars);
+    vv.addEventListener('scroll', setVars);
+    window.addEventListener('orientationchange', setVars);
+
+    return () => {
+      vv.removeEventListener('resize', setVars);
+      vv.removeEventListener('scroll', setVars);
+      window.removeEventListener('orientationchange', setVars);
     };
   }, [isMobileChatOpen]);
 
@@ -1278,7 +1281,7 @@ function DashboardInner() {
         {/* Chat panel */}
         <section
           className={`
-          ${isMobileChatOpen ? 'absolute inset-0 z-40 flex' : 'relative flex-1'}
+          ${isMobileChatOpen ? 'fixed inset-0 z-40 flex' : 'relative flex-1'}
           flex-col
           ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}
           overflow-hidden ${isMobileChatOpen ? 'rounded-none' : 'rounded-[34px]'} backdrop-blur-2xl min-h-0 max-h-full flex-1
@@ -1600,7 +1603,9 @@ function DashboardInner() {
                   : 'bg-white/74 shadow-[0_-14px_30px_-28px_rgba(148,163,184,0.24)]'
               }`}
                 style={{
-                  paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom, 0px))`,
+                  paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px) + ${
+                    isMobileChatOpen ? 'var(--mobile-tabbar-h, 72px)' : '0px'
+                  })`,
                 }}
               >
                 <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3">
