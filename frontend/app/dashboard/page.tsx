@@ -1278,7 +1278,7 @@ function DashboardInner() {
         {/* Chat panel */}
         <section
           className={`
-          ${isMobileChatOpen ? 'fixed inset-0 z-40 flex' : 'relative flex-1'}
+          ${isMobileChatOpen ? 'absolute inset-0 z-40 flex' : 'relative flex-1'}
           flex-col
           ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}
           overflow-hidden ${isMobileChatOpen ? 'rounded-none' : 'rounded-[34px]'} backdrop-blur-2xl min-h-0 max-h-full flex-1
@@ -1600,9 +1600,7 @@ function DashboardInner() {
                   : 'bg-white/74 shadow-[0_-14px_30px_-28px_rgba(148,163,184,0.24)]'
               }`}
                 style={{
-                  paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px) + ${
-                    isMobileChatOpen ? 'var(--mobile-tabbar-h, 72px)' : '0px'
-                  })`,
+                  paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom, 0px))`,
                 }}
               >
                 <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3">
