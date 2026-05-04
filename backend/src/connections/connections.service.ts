@@ -330,6 +330,17 @@ export class ConnectionsService {
     });
   }
 
+  async clearInvitesHistory(userId: string) {
+    const result = await this.prisma.invite.deleteMany({ where: { fromUserId: userId } });
+    await this.audit.log({
+      userId,
+      action: 'INVITES_HISTORY_CLEARED',
+      severity: 'LOW',
+      metadata: { deletedCount: result.count },
+    });
+    return { ok: true as const, deleted: result.count };
+  }
+
   async revokeInvite(userId: string, inviteId: string) {
     const invite = await this.prisma.invite.findFirst({
       where: { id: inviteId, fromUserId: userId },

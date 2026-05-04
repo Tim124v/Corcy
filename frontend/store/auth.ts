@@ -11,6 +11,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 let _accessToken: string | null = null;
 export const getAccessToken = () => _accessToken;
 
+/** Один общий refresh на все параллельные вызовы (React Strict Mode дергает useEffect дважды). */
+let restoreSessionInFlight: Promise<boolean> | null = null;
+
 type AuthState = {
   accessToken: string | null;
   user: User | null;
@@ -61,31 +64,57 @@ export const useAuthStore = create<AuthState>()(
         set({ user: null, accessToken: null });
       },
       tryRestoreSession: async (): Promise<boolean> => {
-        try {
-          const res = await fetch(`${API_URL}/auth/refresh`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-          });
-          const isJson = res.headers.get('content-type')?.includes('application/json');
-          const data = isJson ? await res.json().catch(() => null) : null;
-          if (!res.ok || !data?.ok || !data.accessToken) {
+        if (restoreSessionInFlight) return restoreSessionInFlight;
+
+        restoreSessionInFlight = (async (): Promise<boolean> => {
+          try {
+            // Пробуем до 2 раз — первая попытка может упасть из-за сети
+            for (let attempt = 0; attempt < 2; attempt++) {
+              try {
+                const res = await fetch(`${API_URL}/auth/refresh`, {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'Content-Type': 'application/json' },
+                });
+                const isJson = res.headers.get('content-type')?.includes('application/json');
+                const data = isJson ? await res.json().catch(() => null) : null;
+
+                if (res.ok && data?.ok && data.accessToken) {
+                  _accessToken = data.accessToken;
+                  set({
+                    accessToken: data.accessToken,
+                    user: data.user ?? null,
+                    hydrated: true,
+                  });
+                  return true;
+                }
+
+                // 401 — сессия истекла, нет смысла повторять
+                if (res.status === 401) break;
+
+                // Другая ошибка (500, сеть) — повторим через 800ms
+                if (attempt === 0) {
+                  await new Promise((r) => setTimeout(r, 800));
+                  continue;
+                }
+              } catch {
+                // Сеть недоступна — повторим через 800ms
+                if (attempt === 0) {
+                  await new Promise((r) => setTimeout(r, 800));
+                  continue;
+                }
+              }
+            }
+
             _accessToken = null;
             set({ user: null, accessToken: null, hydrated: true });
             return false;
+          } finally {
+            restoreSessionInFlight = null;
           }
-          _accessToken = data.accessToken;
-          set({
-            accessToken: data.accessToken,
-            user: data.user ?? null,
-            hydrated: true,
-          });
-          return true;
-        } catch {
-          _accessToken = null;
-          set({ user: null, accessToken: null, hydrated: true });
-          return false;
-        }
+        })();
+
+        return restoreSessionInFlight;
       },
 
       scheduleRefresh: () => {
@@ -100,7 +129,7 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
+            const res = await fetch(`${API_URL}/auth/refresh`, {
               method: 'POST',
               credentials: 'include',
             });

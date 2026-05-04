@@ -22,7 +22,7 @@ type InviteItem = {
   link: string | null;
 };
 
-type InviteFilter = 'all' | InviteItem['status'];
+type InviteFilter = 'all' | 'active' | 'used' | 'expired';
 
 const formatDateTime = (value: string, language: 'ru' | 'en') =>
   new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'ru-RU', {
@@ -47,8 +47,8 @@ export default function InvitesPage() {
   const [message, setMessage] = useState('');
   const [copyState, setCopyState] = useState<string | null>(null);
   const [filter, setFilter] = useState<InviteFilter>('active');
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [showRevoked, setShowRevoked] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [clearingHistory, setClearingHistory] = useState(false);
 
   const loadInvites = async () => {
     try {
@@ -68,29 +68,29 @@ export default function InvitesPage() {
     void loadInvites().finally(() => setLoading(false));
   }, [accessToken, router]);
 
-  const activeInvitesCount = useMemo(
-    () => invites.filter((invite) => invite.status === 'active').length,
+  const visibleInvites = useMemo(
+    () => invites.filter((invite) => invite.status !== 'revoked'),
     [invites],
   );
 
+  const activeInvitesCount = useMemo(
+    () => visibleInvites.filter((invite) => invite.status === 'active').length,
+    [visibleInvites],
+  );
+
   const filteredInvites = useMemo(() => {
-    let result = filter === 'all' ? invites : invites.filter((invite) => invite.status === filter);
-    // Скрываем отозванные если showRevoked = false и фильтр не "revoked"
-    if (!showRevoked && filter !== 'revoked') {
-      result = result.filter((invite) => invite.status !== 'revoked');
-    }
-    return result;
-  }, [filter, invites, showRevoked]);
+    if (filter === 'all') return visibleInvites;
+    return visibleInvites.filter((invite) => invite.status === filter);
+  }, [filter, visibleInvites]);
 
   const filterCounts = useMemo(
     () => ({
-      all: invites.length,
-      active: invites.filter((invite) => invite.status === 'active').length,
-      used: invites.filter((invite) => invite.status === 'used').length,
-      expired: invites.filter((invite) => invite.status === 'expired').length,
-      revoked: invites.filter((invite) => invite.status === 'revoked').length,
+      all: visibleInvites.length,
+      active: visibleInvites.filter((invite) => invite.status === 'active').length,
+      used: visibleInvites.filter((invite) => invite.status === 'used').length,
+      expired: visibleInvites.filter((invite) => invite.status === 'expired').length,
     }),
-    [invites],
+    [visibleInvites],
   );
 
   const filters: Array<{ id: InviteFilter; label: string; count: number }> = [
@@ -98,7 +98,6 @@ export default function InvitesPage() {
     { id: 'active', label: isEn ? 'Active' : 'Активные', count: filterCounts.active },
     { id: 'used', label: isEn ? 'Used' : 'Использованные', count: filterCounts.used },
     { id: 'expired', label: isEn ? 'Expired' : 'Истекшие', count: filterCounts.expired },
-    { id: 'revoked', label: isEn ? 'Revoked' : 'Отозванные', count: filterCounts.revoked },
   ];
 
   const createInviteLink = async () => {
@@ -126,6 +125,7 @@ export default function InvitesPage() {
       });
       setMessage(isEn ? 'Invite link created.' : 'Ссылка приглашения создана.');
       await loadInvites();
+      setHistoryOpen(true);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : isEn ? 'Failed to create invite link' : 'Не удалось создать ссылку приглашения');
     } finally {
@@ -152,6 +152,7 @@ export default function InvitesPage() {
       setInviteEmail('');
       setMessage(isEn ? 'Invitation sent successfully.' : 'Приглашение успешно отправлено.');
       await loadInvites();
+      setHistoryOpen(true);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : isEn ? 'Failed to send invitation' : 'Не удалось отправить приглашение');
     } finally {
@@ -167,6 +168,34 @@ export default function InvitesPage() {
       setMessage(isEn ? 'Invite revoked.' : 'Приглашение отозвано.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : isEn ? 'Failed to revoke invite' : 'Не удалось отозвать приглашение');
+    }
+  };
+
+  const clearInvitesHistory = async () => {
+    const confirmed = window.confirm(
+      isEn
+        ? 'Delete all invites from your history? Active links will stop working. This cannot be undone.'
+        : 'Удалить все приглашения из истории? Активные ссылки перестанут работать. Действие необратимо.',
+    );
+    if (!confirmed) return;
+
+    setClearingHistory(true);
+    setMessage('');
+    try {
+      await api<{ ok: boolean; deleted?: number }>('/connections/invites/history', { method: 'DELETE' });
+      await loadInvites();
+      addNotification({
+        type: 'invite',
+        title: isEn ? 'History cleared' : 'История очищена',
+        message: isEn ? 'All invites were removed from the list.' : 'Все приглашения удалены из списка.',
+      });
+      setMessage(isEn ? 'Invite history cleared.' : 'История приглашений очищена.');
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : isEn ? 'Failed to clear history' : 'Не удалось очистить историю',
+      );
+    } finally {
+      setClearingHistory(false);
     }
   };
 
@@ -265,7 +294,17 @@ export default function InvitesPage() {
                   {isEn ? 'Your invites' : 'Ваши приглашения'}
                 </h2>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={clearingHistory || visibleInvites.length === 0}
+                  loading={clearingHistory}
+                  onClick={() => void clearInvitesHistory()}
+                  className="rounded-full px-3 py-1.5 text-xs font-medium"
+                >
+                  {isEn ? 'Clear history' : 'Очистить историю'}
+                </Button>
                 <div className="app-chip rounded-full px-3 py-1 text-xs font-medium">
                   {isEn ? `Active: ${activeInvitesCount}` : `Активно: ${activeInvitesCount}`}
                 </div>
@@ -368,13 +407,9 @@ export default function InvitesPage() {
                             ? isEn
                               ? 'Used'
                               : 'Использовано'
-                            : invite.status === 'revoked'
-                              ? isEn
-                                ? 'Revoked'
-                                : 'Отозвано'
-                              : isEn
-                                ? 'Expired'
-                                : 'Истекло';
+                            : isEn
+                              ? 'Expired'
+                              : 'Истекло';
 
                       return (
                         <article
@@ -393,9 +428,7 @@ export default function InvitesPage() {
                                       ? 'bg-emerald-500/10 text-emerald-300'
                                       : invite.status === 'used'
                                         ? 'bg-blue-500/10 text-blue-300'
-                                        : invite.status === 'revoked'
-                                          ? 'bg-slate-500/15 text-slate-300'
-                                          : 'bg-amber-500/10 text-amber-300'
+                                        : 'bg-amber-500/10 text-amber-300'
                                   }`}
                                 >
                                   {statusLabel}
@@ -448,27 +481,6 @@ export default function InvitesPage() {
                       );
                     })}
                   </div>
-                )}
-
-                {filterCounts.revoked > 0 && filter !== 'revoked' && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRevoked((v) => !v)}
-                    className="mt-3 w-full rounded-[20px] py-2.5 text-xs font-medium
-                      text-slate-500 dark:text-slate-400
-                      bg-slate-900/3 dark:bg-white/[0.03]
-                      border border-slate-900/5 dark:border-white/[0.06]
-                      hover:bg-slate-900/6 dark:hover:bg-white/[0.06]
-                      transition-colors duration-200"
-                  >
-                    {showRevoked
-                      ? isEn
-                        ? `Hide revoked (${filterCounts.revoked})`
-                        : `Скрыть отозванные (${filterCounts.revoked})`
-                      : isEn
-                        ? `Show revoked (${filterCounts.revoked})`
-                        : `Показать отозванные (${filterCounts.revoked})`}
-                  </button>
                 )}
               </div>
             )}
