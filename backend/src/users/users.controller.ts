@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -17,6 +18,8 @@ import { UsersService } from './users.service.js';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadService } from '../messages/upload.service.js';
+import { PushService } from '../auth/push.service.js';
+import { PlanGuardService } from '../common/plan-guard.service.js';
 
 const AVATAR_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
@@ -26,6 +29,8 @@ export class UsersController {
   constructor(
     private readonly users: UsersService,
     private readonly uploadService: UploadService,
+    private readonly push: PushService,
+    private readonly planGuard: PlanGuardService,
   ) {}
 
   @Get('me/security-log')
@@ -70,5 +75,40 @@ export class UsersController {
     await this.users.updateMe(user.id, { avatarUrl: result.url });
 
     return { avatarUrl: result.url };
+  }
+
+  @Get('me/plan')
+  async getMyPlan(@ReqUser() user: { id: string }) {
+    return this.planGuard.getUserLimits(user.id);
+  }
+
+  @Post('me/push-subscription')
+  async savePushSubscription(
+    @ReqUser() user: { id: string },
+    @Body()
+    body: {
+      endpoint: string;
+      keys: { p256dh: string; auth: string };
+      userAgent?: string;
+    },
+  ) {
+    await this.push.saveSubscription(user.id, body);
+    return { ok: true };
+  }
+
+  @Delete('me/push-subscription')
+  async removePushSubscription(
+    @ReqUser() user: { id: string },
+    @Body() body: { endpoint: string },
+  ) {
+    await this.push.removeSubscription(body.endpoint, user.id);
+    return { ok: true };
+  }
+
+  @Get('vapid-public-key')
+  getVapidPublicKey() {
+    const key = process.env.VAPID_PUBLIC_KEY;
+    if (!key) return { key: null };
+    return { key };
   }
 }

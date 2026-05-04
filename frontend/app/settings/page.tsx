@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '../../store/auth';
 import { api } from '../../lib/api';
 import { useTheme } from '../../components/theme-provider';
@@ -13,6 +13,7 @@ import { AppearancePanel } from '../../components/profile/AppearancePanel';
 import { useNotificationsStore, type NotificationType } from '../../store/notifications';
 import { SecureInput } from '../../components/ui/SecureInput';
 import { Button } from '../../components/ui/Button';
+import { usePushNotifications } from '../../hooks/use-push-notifications';
 
 type UserProfile = {
   name: string | null;
@@ -23,6 +24,7 @@ type UserProfile = {
 
 export default function SettingsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, accessToken } = useAuthStore();
   const { theme, setTheme } = useTheme();
   const { language } = useLanguage();
@@ -31,6 +33,8 @@ export default function SettingsPage() {
   const setNotificationsEnabled = useNotificationsStore((s) => s.setEnabled);
   const notificationCategoryEnabled = useNotificationsStore((s) => s.categoryEnabled);
   const setNotificationCategoryEnabled = useNotificationsStore((s) => s.setCategoryEnabled);
+  const { permission: pushPermission, subscribed: pushSubscribed, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } =
+    usePushNotifications();
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
@@ -41,6 +45,30 @@ export default function SettingsPage() {
   const [passwordMessage, setPasswordMessage] = useState('');
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isSessionsModalOpen, setIsSessionsModalOpen] = useState(false);
+  const [twoFaStep, setTwoFaStep] = useState<'idle' | 'setup' | 'backup' | 'disable'>('idle');
+  const [twoFaQr, setTwoFaQr] = useState('');
+  const [twoFaSecret, setTwoFaSecret] = useState('');
+  const [twoFaBackupCodes, setTwoFaBackupCodes] = useState<string[]>([]);
+  const [twoFaToken, setTwoFaToken] = useState('');
+  const [twoFaLoading, setTwoFaLoading] = useState(false);
+  const [twoFaError, setTwoFaError] = useState('');
+  const [planInfo, setPlanInfo] = useState<{
+    plan: string;
+    planExpiresAt: string | null;
+    limits: {
+      maxInvitesPerMonth: number;
+      maxRooms: number;
+      maxRoomMembers: number;
+      maxContacts: number;
+      unlimitedHistory: boolean;
+      e2eRooms: boolean;
+    };
+    usage: {
+      invitesThisMonth: number;
+      rooms: number;
+      contacts: number;
+    };
+  } | null>(null);
 
   const passwordSubtitle = useMemo(() => {
     if (typeof window === 'undefined' || !user) {
@@ -75,13 +103,102 @@ export default function SettingsPage() {
     void loadSettingsData();
   }, [accessToken, router, user]);
 
-  const toggleTwoFactor = () => {
+  useEffect(() => {
+    if (!accessToken) return;
+    void api<typeof planInfo>('/users/me/plan')
+      .then((data) => setPlanInfo(data as typeof planInfo))
+      .catch(() => {});
+  }, [accessToken]);
+
+  const handleManageBilling = useCallback(async () => {
+    try {
+      const res = await api<{ url: string }>('/payments/billing-portal', {
+        method: 'POST',
+      });
+      window.location.href = res.url;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Billing portal error:', err);
+    }
+  }, []);
+
+  const handleToggleTwoFactor = async () => {
     if (!user) return;
-    setTwoFactorEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem(`connexy-2fa:${user.id}`, String(next));
-      return next;
-    });
+
+    if (twoFactorEnabled) {
+      setTwoFaStep('disable');
+      setTwoFaToken('');
+      setTwoFaError('');
+      return;
+    }
+
+    setTwoFaLoading(true);
+    setTwoFaError('');
+    try {
+      const res = await api<{ ok: boolean; qrCode?: string; secret?: string; backupCodes?: string[]; error?: string }>(
+        '/auth/2fa/setup',
+        { method: 'POST' },
+      );
+      if (!res.ok) {
+        setTwoFaError(res.error || 'Ошибка');
+        return;
+      }
+      setTwoFaQr(res.qrCode || '');
+      setTwoFaSecret(res.secret || '');
+      setTwoFaBackupCodes(res.backupCodes || []);
+      setTwoFaStep('setup');
+      setTwoFaToken('');
+    } catch (err) {
+      setTwoFaError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setTwoFaLoading(false);
+    }
+  };
+
+  const handleActivate2FA = async () => {
+    if (!user) return;
+    setTwoFaLoading(true);
+    setTwoFaError('');
+    try {
+      const res = await api<{ ok: boolean; error?: string }>('/auth/2fa/activate', {
+        method: 'POST',
+        body: JSON.stringify({ token: twoFaToken }),
+      });
+      if (!res.ok) {
+        setTwoFaError(res.error || 'Неверный код');
+        return;
+      }
+      setTwoFaStep('backup');
+      setTwoFactorEnabled(true);
+      localStorage.setItem(`connexy-2fa:${user.id}`, 'true');
+    } catch (err) {
+      setTwoFaError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setTwoFaLoading(false);
+    }
+  };
+
+  const handleDisable2FA = async () => {
+    if (!user) return;
+    setTwoFaLoading(true);
+    setTwoFaError('');
+    try {
+      const res = await api<{ ok: boolean; error?: string }>('/auth/2fa/disable', {
+        method: 'POST',
+        body: JSON.stringify({ token: twoFaToken }),
+      });
+      if (!res.ok) {
+        setTwoFaError(res.error || 'Неверный код');
+        return;
+      }
+      setTwoFaStep('idle');
+      setTwoFactorEnabled(false);
+      localStorage.removeItem(`connexy-2fa:${user.id}`);
+    } catch (err) {
+      setTwoFaError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setTwoFaLoading(false);
+    }
   };
 
   const changePassword = async (e: React.FormEvent) => {
@@ -141,13 +258,181 @@ export default function SettingsPage() {
               twoFaEnabled={twoFactorEnabled}
               passwordSubtitle={passwordSubtitle}
               sessionsCount={1}
-              onToggleTwoFactor={toggleTwoFactor}
+              onToggleTwoFactor={() => void handleToggleTwoFactor()}
               onPasswordClick={() => {
                 setPasswordMessage('');
                 setIsPasswordModalOpen(true);
               }}
               onSessionsClick={() => setIsSessionsModalOpen(true)}
             />
+
+            {/* 2FA Модал — Setup */}
+            {twoFaStep === 'setup' && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+                <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+                  <h3 className="mb-1 text-lg font-semibold text-white">
+                    {language === 'en' ? 'Enable 2FA' : 'Включить 2FA'}
+                  </h3>
+                  <p className="mb-4 text-xs text-slate-400">
+                    {language === 'en'
+                      ? 'Scan the QR code in Google Authenticator, Authy, or any TOTP app.'
+                      : 'Отсканируйте QR-код в Google Authenticator, Authy или любом TOTP-приложении.'}
+                  </p>
+
+                  {twoFaQr && (
+                    <div className="mb-4 flex justify-center">
+                      <img src={twoFaQr} alt="2FA QR Code" className="h-44 w-44 rounded-xl bg-white p-2" />
+                    </div>
+                  )}
+
+                  <div className="mb-4 rounded-xl bg-white/5 px-3 py-2 text-center">
+                    <p className="mb-1 text-[10px] text-slate-500">
+                      {language === 'en' ? 'Or enter manually:' : 'Или введите вручную:'}
+                    </p>
+                    <p className="break-all font-mono text-xs text-indigo-300">{twoFaSecret}</p>
+                  </div>
+
+                  <p className="mb-2 text-xs text-slate-400">
+                    {language === 'en'
+                      ? 'Enter the 6-digit code from the app to confirm:'
+                      : 'Введите 6-значный код из приложения для подтверждения:'}
+                  </p>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={twoFaToken}
+                    onChange={(e) => setTwoFaToken(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="mb-3 w-full rounded-xl bg-slate-950/40 px-4 py-3 text-center font-mono text-2xl tracking-widest text-white caret-white placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-indigo-500"
+                    style={{ fontSize: '24px' }}
+                    autoFocus
+                  />
+
+                  {twoFaError && <p className="mb-3 text-center text-xs text-red-400">{twoFaError}</p>}
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTwoFaStep('idle');
+                        setTwoFaToken('');
+                        setTwoFaError('');
+                      }}
+                      className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-slate-400 hover:bg-white/10"
+                    >
+                      {language === 'en' ? 'Cancel' : 'Отмена'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleActivate2FA()}
+                      disabled={twoFaToken.length !== 6 || twoFaLoading}
+                      className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      {twoFaLoading ? '...' : language === 'en' ? 'Confirm' : 'Подтвердить'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2FA Модал — Backup codes */}
+            {twoFaStep === 'backup' && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+                <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-green-400">✓</span>
+                    <h3 className="text-lg font-semibold text-white">{language === 'en' ? '2FA enabled!' : '2FA включена!'}</h3>
+                  </div>
+                  <p className="mb-4 text-xs text-slate-400">
+                    {language === 'en'
+                      ? 'Save these backup codes. You will need them if you lose access to your authenticator app.'
+                      : 'Сохраните резервные коды. Они понадобятся если потеряете доступ к приложению.'}
+                    <span className="mt-1 block text-amber-400">
+                      {language === 'en' ? 'Shown only once!' : 'Показываются только один раз!'}
+                    </span>
+                  </p>
+
+                  <div className="mb-4 grid grid-cols-2 gap-2">
+                    {twoFaBackupCodes.map((code) => (
+                      <div key={code} className="rounded-lg bg-white/5 px-3 py-2 text-center font-mono text-sm text-slate-200">
+                        {code}
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(twoFaBackupCodes.join('\n')).catch(() => {});
+                    }}
+                    className="mb-2 w-full rounded-xl border border-white/10 bg-white/5 py-2 text-sm text-slate-400 hover:bg-white/10"
+                  >
+                    {language === 'en' ? 'Copy all codes' : 'Скопировать все коды'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTwoFaStep('idle')}
+                    className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-500"
+                  >
+                    {language === 'en' ? 'Done' : 'Готово'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 2FA Модал — Disable */}
+            {twoFaStep === 'disable' && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+                <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+                  <h3 className="mb-1 text-lg font-semibold text-white">
+                    {language === 'en' ? 'Disable 2FA' : 'Отключить 2FA'}
+                  </h3>
+                  <p className="mb-4 text-xs text-slate-400">
+                    {language === 'en'
+                      ? 'Enter the current code from your authenticator app to confirm.'
+                      : 'Введите текущий код из приложения для подтверждения отключения.'}
+                  </p>
+
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={twoFaToken}
+                    onChange={(e) => setTwoFaToken(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="mb-3 w-full rounded-xl bg-slate-950/40 px-4 py-3 text-center font-mono text-2xl tracking-widest text-white caret-white placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-red-500"
+                    style={{ fontSize: '24px' }}
+                    autoFocus
+                  />
+
+                  {twoFaError && <p className="mb-3 text-center text-xs text-red-400">{twoFaError}</p>}
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTwoFaStep('idle');
+                        setTwoFaToken('');
+                        setTwoFaError('');
+                      }}
+                      className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-slate-400 hover:bg-white/10"
+                    >
+                      {language === 'en' ? 'Cancel' : 'Отмена'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDisable2FA()}
+                      disabled={twoFaToken.length !== 6 || twoFaLoading}
+                      className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                    >
+                      {twoFaLoading ? '...' : language === 'en' ? 'Disable' : 'Отключить'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <section className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
@@ -167,6 +452,176 @@ export default function SettingsPage() {
               onNotificationCategoryToggle={handleNotificationCategoryToggle}
             />
           </div>
+
+          {planInfo && (
+            <section className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
+              <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {language === 'en' ? 'Current plan' : 'Текущий план'}
+              </h3>
+
+              {searchParams.get('payment') === 'success' && (
+                <div className="mb-4 rounded-xl border border-emerald-500/25 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-300">
+                  ✓ {language === 'en' ? 'Payment successful! Your plan will update shortly.' : 'Оплата прошла успешно! План обновится в ближайшее время.'}
+                </div>
+              )}
+              {searchParams.get('payment') === 'canceled' && (
+                <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+                  {language === 'en' ? 'Payment canceled.' : 'Оплата отменена.'}
+                </div>
+              )}
+
+              <div className="mb-5 flex items-center gap-3">
+                <span
+                  className={`rounded-xl px-4 py-1.5 text-sm font-semibold ${
+                    planInfo.plan === 'FREE'
+                      ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                      : planInfo.plan === 'PRO'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-violet-600 text-white'
+                  }`}
+                >
+                  {planInfo.plan}
+                </span>
+                {planInfo.planExpiresAt && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {language === 'en'
+                      ? `until ${new Date(planInfo.planExpiresAt).toLocaleDateString('en-US')}`
+                      : `до ${new Date(planInfo.planExpiresAt).toLocaleDateString('ru-RU')}`}
+                  </span>
+                )}
+              </div>
+
+              <div className="mb-5 flex flex-col gap-4">
+                {[
+                  {
+                    label: language === 'en' ? 'Invites this month' : 'Инвайты этого месяца',
+                    used: planInfo.usage.invitesThisMonth,
+                    max: planInfo.limits.maxInvitesPerMonth,
+                  },
+                  {
+                    label: language === 'en' ? 'Rooms' : 'Комнаты',
+                    used: planInfo.usage.rooms,
+                    max: planInfo.limits.maxRooms,
+                  },
+                  {
+                    label: language === 'en' ? 'Contacts' : 'Контакты',
+                    used: planInfo.usage.contacts,
+                    max: planInfo.limits.maxContacts,
+                  },
+                ].map((item) => {
+                  const unlimited = item.max === -1;
+                  const pct = unlimited ? 0 : Math.min((item.used / item.max) * 100, 100);
+                  const near = !unlimited && pct >= 80;
+                  const atLimit = !unlimited && item.used >= item.max;
+
+                  return (
+                    <div key={item.label}>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="text-xs text-slate-500 dark:text-slate-400">{item.label}</span>
+                        <span
+                          className={`text-xs font-medium ${
+                            atLimit ? 'text-red-500' : near ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'
+                          }`}
+                        >
+                          {unlimited ? `${item.used} / ∞` : `${item.used} / ${item.max}`}
+                        </span>
+                      </div>
+                      {!unlimited && (
+                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-900/10 dark:bg-white/10">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              atLimit ? 'bg-red-500' : near ? 'bg-amber-500' : 'bg-indigo-500'
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    {
+                      label: language === 'en' ? 'Room members' : 'Участников в комнате',
+                      value: planInfo.limits.maxRoomMembers,
+                    },
+                    {
+                      label: language === 'en' ? 'Message history' : 'История сообщений',
+                      value: planInfo.limits.unlimitedHistory ? '∞' : (language === 'en' ? '30 days' : '30 дней'),
+                    },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-xl bg-slate-900/5 px-4 py-3 dark:bg-white/5">
+                      <div className="text-lg font-semibold text-slate-900 dark:text-white">{item.value}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {planInfo.plan !== 'TEAM' && (
+                <button
+                  type="button"
+                  onClick={() => router.push('/upgrade')}
+                  className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-2.5 text-sm font-semibold text-white transition-all hover:from-indigo-500 hover:to-violet-500"
+                >
+                  {language === 'en' ? 'Upgrade plan →' : 'Улучшить план →'}
+                </button>
+              )}
+
+              {planInfo.plan !== 'FREE' && (
+                <button
+                  type="button"
+                  onClick={() => void handleManageBilling()}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs text-slate-600 transition-all hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10"
+                >
+                  {language === 'en' ? 'Manage subscription' : 'Управление подпиской'}
+                </button>
+              )}
+            </section>
+          )}
+
+          <section className="app-shell-card rounded-[24px] p-6 dark:border-slate-700/60">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-200">
+                  {language === 'en' ? 'Push notifications' : 'Push-уведомления'}
+                </p>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-500">
+                  {pushPermission === 'denied'
+                    ? language === 'en'
+                      ? 'Blocked in browser settings'
+                      : 'Заблокированы в настройках браузера'
+                    : pushSubscribed
+                      ? language === 'en'
+                        ? 'You get alerts for new messages when the tab is closed'
+                        : 'Уведомления о новых сообщениях, даже когда вкладка закрыта'
+                      : language === 'en'
+                        ? 'Get notified about new messages when the tab is closed (requires production / HTTPS)'
+                        : 'Получать уведомления о новых сообщениях, когда вкладка закрыта (нужны HTTPS / production)'}
+                </p>
+              </div>
+              {pushPermission !== 'denied' && (
+                <button
+                  type="button"
+                  onClick={() => void (pushSubscribed ? pushUnsubscribe() : pushSubscribe())}
+                  className={`shrink-0 rounded-xl px-4 py-2 text-xs font-medium transition-all ${
+                    pushSubscribed
+                      ? 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                  }`}
+                >
+                  {pushSubscribed
+                    ? language === 'en'
+                      ? 'Turn off'
+                      : 'Отключить'
+                    : language === 'en'
+                      ? 'Turn on'
+                      : 'Включить'}
+                </button>
+              )}
+            </div>
+          </section>
         </div>
       </div>
 

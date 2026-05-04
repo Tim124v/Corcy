@@ -1,14 +1,16 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MessagesController } from './messages.controller.js';
 import { MessagesService } from './messages.service.js';
 import { UploadService } from './upload.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { ChatModule } from '../chat/chat.module.js';
+import { UsersModule } from '../users/users.module.js';
+import { PushService } from '../auth/push.service.js';
 
 @Module({
-  imports: [AuthModule, ChatModule],
+  imports: [AuthModule, ChatModule, forwardRef(() => UsersModule)],
   controllers: [MessagesController],
-  providers: [MessagesService, UploadService],
+  providers: [MessagesService, UploadService, PushService],
   exports: [UploadService],
 })
 export class MessagesModule {}

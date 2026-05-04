@@ -113,6 +113,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await client.leave(`room:${data.roomId}`);
   }
 
+  /** Есть ли хотя бы одно активное WS-подключение у пользователя */
+  isOnline(userId: string): boolean {
+    const sockets = this.userSockets.get(userId);
+    return !!sockets && sockets.size > 0;
+  }
+
   // Отправить событие конкретному пользователю
   sendToUser(userId: string, event: string, data: unknown) {
     this.server.to(`user:${userId}`).emit(event, data);
@@ -121,6 +127,89 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Отправить событие в комнату
   sendToRoom(roomId: string, event: string, data: unknown) {
     this.server.to(`room:${roomId}`).emit(event, data);
+  }
+
+  // ── WebRTC signaling ──────────────────────────────────────────
+
+  @SubscribeMessage('call:offer')
+  handleCallOffer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { toUserId: string; offer: RTCSessionDescriptionInit },
+  ) {
+    const fromUserId = client.data?.userId as string | undefined;
+    if (!fromUserId) return;
+
+    this.server.to(`user:${data.toUserId}`).emit('call:incoming', {
+      fromUserId,
+      offer: data.offer,
+    });
+  }
+
+  @SubscribeMessage('call:answer')
+  handleCallAnswer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { toUserId: string; answer: RTCSessionDescriptionInit },
+  ) {
+    const fromUserId = client.data?.userId as string | undefined;
+    if (!fromUserId) return;
+
+    this.server.to(`user:${data.toUserId}`).emit('call:answered', {
+      fromUserId,
+      answer: data.answer,
+    });
+  }
+
+  @SubscribeMessage('call:ice-candidate')
+  handleIceCandidate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { toUserId: string; candidate: RTCIceCandidateInit },
+  ) {
+    const fromUserId = client.data?.userId as string | undefined;
+    if (!fromUserId) return;
+
+    this.server.to(`user:${data.toUserId}`).emit('call:ice-candidate', {
+      fromUserId,
+      candidate: data.candidate,
+    });
+  }
+
+  @SubscribeMessage('call:reject')
+  handleCallReject(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { toUserId: string },
+  ) {
+    const fromUserId = client.data?.userId as string | undefined;
+    if (!fromUserId) return;
+
+    this.server.to(`user:${data.toUserId}`).emit('call:rejected', {
+      fromUserId,
+    });
+  }
+
+  @SubscribeMessage('call:end')
+  handleCallEnd(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { toUserId: string },
+  ) {
+    const fromUserId = client.data?.userId as string | undefined;
+    if (!fromUserId) return;
+
+    this.server.to(`user:${data.toUserId}`).emit('call:ended', {
+      fromUserId,
+    });
+  }
+
+  @SubscribeMessage('call:busy')
+  handleCallBusy(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { toUserId: string },
+  ) {
+    const fromUserId = client.data?.userId as string | undefined;
+    if (!fromUserId) return;
+
+    this.server.to(`user:${data.toUserId}`).emit('call:busy', {
+      fromUserId,
+    });
   }
 }
 

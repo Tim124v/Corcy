@@ -10,9 +10,12 @@ import { MessagesModule } from '../messages/messages.module.js';
 import { RoomsModule } from '../rooms/rooms.module.js';
 import { WaitlistModule } from '../waitlist/waitlist.module.js';
 import { ChatModule } from '../chat/chat.module.js';
+import { PaymentsModule } from '../payments/payments.module.js';
+import { CommonModule } from '../common/common.module.js';
 
 @Module({
   imports: [
+    CommonModule,
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
       { name: 'short', ttl: 1000, limit: 10 },
@@ -27,6 +30,7 @@ import { ChatModule } from '../chat/chat.module.js';
     RoomsModule,
     WaitlistModule,
     ChatModule,
+    PaymentsModule,
   ],
   providers: [
     {

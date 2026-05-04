@@ -9,6 +9,12 @@ import { hashPassword, verifyPassword } from '../security/password.util.js';
 import { TokenRefreshService } from '../security/token-refresh.service.js';
 import { AuditLogService } from '../security/audit-log.service.js';
 import { checkRateLimit, clearRateLimit, incrementRateLimit } from './rate-limit.util.js';
+import {
+  verificationEmailHtml,
+  verificationEmailText,
+  welcomeEmailHtml,
+  welcomeEmailText,
+} from './email-templates.js';
 
 const VERIFICATION_CODE_EXPIRY_MINUTES = 10;
 
@@ -16,7 +22,7 @@ function generateSixDigitCode(): string {
   return String(randomInt(100000, 1000000));
 }
 
-function sendVerificationEmail(to: string, code: string): Promise<void> {
+function sendMail(opts: { to: string; subject: string; text: string; html?: string }): Promise<void> {
   const smtpHost = process.env.SMTP_HOST;
   const smtpPort = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
   const smtpUser = process.env.SMTP_USER;
@@ -25,7 +31,7 @@ function sendVerificationEmail(to: string, code: string): Promise<void> {
   if (!smtpHost || !smtpPort || !smtpUser || !smtpPass || !smtpFrom) {
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
-      console.log(`[DEV] Email verification code for ${to}: ${code}`);
+      console.log(`[DEV] Email to ${opts.to}: ${opts.subject}\n${opts.text}`);
     }
     return Promise.resolve();
   }
@@ -38,16 +44,25 @@ function sendVerificationEmail(to: string, code: string): Promise<void> {
   return transporter
     .sendMail({
       from: smtpFrom,
-      to,
-      subject: 'Verify your account',
-      text: `Your verification code is: ${code}\nThis code expires in 10 minutes.`,
-      html: `<p>Your verification code is: <strong>${code}</strong></p><p>This code expires in 10 minutes.</p>`,
+      to: opts.to,
+      subject: opts.subject,
+      text: opts.text,
+      ...(opts.html ? { html: opts.html } : {}),
     })
     .then(() => {})
     .catch((err: unknown) => {
       // eslint-disable-next-line no-console
-      console.warn('Failed to send verification email:', (err as Error).message);
+      console.warn('Failed to send email:', (err as Error).message);
     });
+}
+
+function sendVerificationEmail(to: string, code: string): Promise<void> {
+  return sendMail({
+    to,
+    subject: 'Connexy — подтверждение email',
+    text: verificationEmailText(code),
+    html: verificationEmailHtml(code),
+  });
 }
 
 export type AuthClientMeta = { ipAddress?: string; userAgent?: string };
@@ -285,6 +300,14 @@ export class AuthService {
       this.prisma.emailVerification.delete({ where: { id: verification.id } }),
     ]);
     await clearRateLimit(this.prisma, rlKey);
+
+    // После успешной верификации — отправить welcome
+    void sendMail({
+      to: user.email,
+      subject: 'Добро пожаловать в Connexy!',
+      text: welcomeEmailText(user.name || user.email.split('@')[0]),
+      html: welcomeEmailHtml(user.name || user.email.split('@')[0]),
+    }).catch(() => {}); // fire-and-forget, не блокируем ответ
 
     const out = await this.issueFullTokens(user.id, meta, res);
     await this.audit.log({

@@ -5,6 +5,8 @@ import { createTransport } from 'nodemailer';
 import { AuditLogService } from '../security/audit-log.service.js';
 import { InviteTokenUtil } from '../invites/invite-security.util.js';
 import type { CreateInviteDto } from '../auth/auth.schemas.js';
+import { inviteEmailHtml, inviteEmailText } from '../auth/email-templates.js';
+import { PlanGuardService } from '../common/plan-guard.service.js';
 
 const MAX_ACTIVE_INVITES = 10;
 
@@ -12,6 +14,7 @@ const MAX_ACTIVE_INVITES = 10;
 export class ConnectionsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly planGuard: PlanGuardService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -56,6 +59,8 @@ export class ConnectionsService {
 
   /** Отправить заявку в контакты по ID пользователя. Контакт появится только после принятия заявки. */
   async requestByUserId(fromUserId: string, toUserId: string) {
+    await this.planGuard.checkContactsLimit(fromUserId);
+
     const toId = String(toUserId || '').trim();
     if (!toId) throw new NotFoundException('Введите ID пользователя');
     if (toId === fromUserId) throw new ForbiddenException('Нельзя отправить заявку себе');
@@ -114,6 +119,12 @@ export class ConnectionsService {
     if (!req) throw new NotFoundException('Заявка не найдена');
     if (req.toUserId !== userId) throw new ForbiddenException('Нет доступа');
     if (req.status !== 'pending') throw new ForbiddenException('Заявка уже обработана');
+
+    // Проверяем лимиты контактов для обеих сторон перед созданием Connection
+    await Promise.all([
+      this.planGuard.checkContactsLimit(req.fromUserId),
+      this.planGuard.checkContactsLimit(req.toUserId),
+    ]);
 
     const [uid1, uid2] = req.fromUserId < req.toUserId ? [req.fromUserId, req.toUserId] : [req.toUserId, req.fromUserId];
     await this.prisma.$transaction([
@@ -201,6 +212,9 @@ export class ConnectionsService {
   async createInviteLink(userId: string, opts?: CreateInviteDto) {
     const me = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!me) throw new ForbiddenException();
+
+    await this.planGuard.checkInviteLimit(userId);
+
     await this.assertUnderActiveInviteLimit(userId);
 
     const { inviteId, rawToken } = await this.createInviteRecord(userId, { ...opts, toEmail: null });
@@ -233,6 +247,8 @@ export class ConnectionsService {
       });
       if (already) return { ok: false, error: 'Уже в контактах' };
     }
+
+    await this.planGuard.checkInviteLimit(userId);
 
     await this.assertUnderActiveInviteLimit(userId);
 
@@ -270,9 +286,9 @@ export class ConnectionsService {
           .sendMail({
             from: smtpFrom,
             to: toNorm,
-            subject: 'Приглашение в чат',
-            text: `Вас пригласили в чат. Перейдите по ссылке для регистрации/входа: ${link}`,
-            html: `<p>Вас пригласили в чат.</p><p><a href="${link}">Открыть приглашение</a></p>`,
+            subject: 'Вас приглашают в Connexy',
+            text: inviteEmailText(link, me.name || me.email),
+            html: inviteEmailHtml(link, me.name || me.email),
           })
           .catch((err: unknown) => {
             // eslint-disable-next-line no-console
@@ -377,7 +393,6 @@ export class ConnectionsService {
             email: true,
             avatarUrl: true,
             createdAt: true,
-            isAdmin: true,
           },
         },
       },
@@ -396,27 +411,17 @@ export class ConnectionsService {
       throw new BadRequestException('Приглашение уже использовано');
     }
 
-    const isAdminInvite = invite.fromUser.isAdmin === true;
-
     return {
       ok: true,
       invite: {
         id: invite.id,
         expiresAt: invite.expiresAt,
-        isAdminInvite,
-        fromUser: isAdminInvite
-          ? {
-              name: 'Connexy',
-              email: '',
-              avatarUrl: null,
-              memberSince: invite.fromUser.createdAt,
-            }
-          : {
-              name: invite.fromUser.name,
-              email: invite.fromUser.email,
-              avatarUrl: invite.fromUser.avatarUrl,
-              memberSince: invite.fromUser.createdAt,
-            },
+        fromUser: {
+          name: invite.fromUser.name,
+          email: invite.fromUser.email,
+          avatarUrl: invite.fromUser.avatarUrl,
+          memberSince: invite.fromUser.createdAt,
+        },
       },
     };
   }

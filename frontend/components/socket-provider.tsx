@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../store/auth';
 import { useChatActivityStore } from '../store/chat-activity';
-import { connectSocket } from '../store/socket';
+import { connectSocket, getSocket } from '../store/socket';
+import { usePresenceStore } from '../store/presence';
 
 function playSound() {
   try {
@@ -42,13 +44,20 @@ function notify(title: string, body: string, tag: string) {
 }
 
 export function SocketProvider() {
+  const router = useRouter();
   const accessToken = useAuthStore((s) => s.accessToken);
   const incrementUnreadDirect = useChatActivityStore((s) => s.incrementUnreadDirect);
   const incrementUnreadRoom = useChatActivityStore((s) => s.incrementUnreadRoom);
+  const setOnlineIds = usePresenceStore((s) => s.setOnlineIds);
+  const setOnline = usePresenceStore((s) => s.setOnline);
   const incrementUnreadDirectRef = useRef(incrementUnreadDirect);
   const incrementUnreadRoomRef = useRef(incrementUnreadRoom);
+  const setOnlineIdsRef = useRef(setOnlineIds);
+  const setOnlineRef = useRef(setOnline);
   incrementUnreadDirectRef.current = incrementUnreadDirect;
   incrementUnreadRoomRef.current = incrementUnreadRoom;
+  setOnlineIdsRef.current = setOnlineIds;
+  setOnlineRef.current = setOnline;
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -92,9 +101,36 @@ export function SocketProvider() {
       notify('CONNEXY', msg.text?.slice(0, 80) || 'New room message', `room-${msg.roomId}`);
     });
 
+    socket.on('presenceInit', (data: unknown) => {
+      const d = data as { onlineIds: string[] };
+      if (Array.isArray(d?.onlineIds)) setOnlineIdsRef.current(d.onlineIds);
+    });
+
+    socket.on('presenceUpdate', (data: unknown) => {
+      const d = data as { userId: string; online: boolean };
+      if (d?.userId) setOnlineRef.current(d.userId, d.online);
+    });
+
+    socket.on('call:incoming', (data: unknown) => {
+      const d = data as { fromUserId: string; offer: RTCSessionDescriptionInit };
+      if (!d?.fromUserId || !d?.offer) return;
+
+      const accept = window.confirm('Входящий звонок. Ответить?');
+
+      if (accept) {
+        const encodedOffer = encodeURIComponent(JSON.stringify(d.offer));
+        const hasVideo = typeof d.offer.sdp === 'string' && d.offer.sdp.includes('m=video');
+        router.push(
+          `/calls?peerId=${d.fromUserId}&incoming=true&offer=${encodedOffer}&video=${hasVideo ? 'true' : 'false'}`,
+        );
+      } else {
+        getSocket()?.emit('call:reject', { toUserId: d.fromUserId });
+      }
+    });
+
     // НЕ отключаем при размонтировании — сокет живёт как синглтон
     return () => {};
-  }, [accessToken]);
+  }, [accessToken, router]);
 
   return null;
 }
