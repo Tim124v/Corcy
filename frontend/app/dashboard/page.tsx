@@ -16,6 +16,7 @@ import { useSocket } from '../../hooks/use-socket';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { MessageStatus } from '../../components/chat/MessageStatus';
+import { usePresenceStore } from '../../store/presence';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -24,7 +25,7 @@ type Message = {
   id: string;
   text: string;
   senderId: string;
-  recipientId: string;
+  recipientId?: string;
   createdAt: string;
   attachmentUrl?: string | null;
   attachmentName?: string | null;
@@ -200,7 +201,13 @@ function DashboardInner() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [msgCursor, setMsgCursor] = useState<string | undefined>(undefined);
+  const [msgHasMore, setMsgHasMore] = useState(false);
+  const [msgLoadingMore, setMsgLoadingMore] = useState(false);
   const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
+  const [roomCursor, setRoomCursor] = useState<string | undefined>(undefined);
+  const [roomHasMore, setRoomHasMore] = useState(false);
+  const [roomLoadingMore, setRoomLoadingMore] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingRoomMessages, setLoadingRoomMessages] = useState(false);
   const [messageText, setMessageText] = useState('');
@@ -210,7 +217,10 @@ function DashboardInner() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
   const [search, setSearch] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const isOnline = usePresenceStore((s) => s.isOnline);
+  const [typingDirectFrom, setTypingDirectFrom] = useState<string | null>(null);
+  const [typingRoomFrom, setTypingRoomFrom] = useState<Record<string, string[]>>({});
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchRef = useRef<HTMLInputElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
@@ -276,7 +286,7 @@ function DashboardInner() {
     el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
-  const { joinRoom, leaveRoom } = useSocket({
+  const { joinRoom, leaveRoom, emitTyping, emitStopTyping } = useSocket({
     onMessageRead: (data) => {
       setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, readAt: data.readAt } : m)));
       const peerId = selected?.user.id;
@@ -288,6 +298,25 @@ function DashboardInner() {
           );
         }
       }
+    },
+    onTypingDirect: (data) => {
+      if (selected?.user.id === data.fromUserId) {
+        setTypingDirectFrom(data.isTyping ? data.fromUserId : null);
+      }
+    },
+    onTypingRoom: (data) => {
+      setTypingRoomFrom((prev) => {
+        const next = { ...prev };
+        const arr = next[data.roomId] ? [...next[data.roomId]] : [];
+        if (data.isTyping) {
+          if (!arr.includes(data.fromUserId)) arr.push(data.fromUserId);
+        } else {
+          const i = arr.indexOf(data.fromUserId);
+          if (i !== -1) arr.splice(i, 1);
+        }
+        next[data.roomId] = arr;
+        return next;
+      });
     },
   });
 
@@ -403,8 +432,13 @@ function DashboardInner() {
   useEffect(() => {
     if (!selected) {
       setMessages([]);
+      setMsgCursor(undefined);
+      setMsgHasMore(false);
       return;
     }
+    setMessages([]);
+    setMsgCursor(undefined);
+    setMsgHasMore(false);
     const cached = messagesCacheRef.current.direct[selected.user.id];
     if (cached?.length) setMessages(cached);
     else setMessages([]);
@@ -413,6 +447,8 @@ function DashboardInner() {
     api<ThreadResponse>(`/messages?with=${selected.user.id}`, { method: 'GET' })
       .then((data) => {
         setMessages(data.messages);
+        setMsgCursor(data.nextCursor);
+        setMsgHasMore(data.hasMore);
         messagesCacheRef.current.direct[selected.user.id] = data.messages;
         pendingJumpToBottomRef.current = true;
 
@@ -422,7 +458,11 @@ function DashboardInner() {
             void api(`/messages/${m.id}/read`, { method: 'POST' }).catch(() => {});
           });
       })
-      .catch(() => setMessages([]))
+      .catch(() => {
+        setMessages([]);
+        setMsgCursor(undefined);
+        setMsgHasMore(false);
+      })
       .finally(() => setLoadingMessages(false));
   }, [selected]);
 
@@ -433,6 +473,8 @@ function DashboardInner() {
       api<ThreadResponse>(`/messages?with=${peerId}`, { method: 'GET' })
         .then((data) => {
           setMessages(data.messages);
+          setMsgCursor(data.nextCursor);
+          setMsgHasMore(data.hasMore);
           messagesCacheRef.current.direct[peerId] = data.messages;
         })
         .catch(() => {});
@@ -443,8 +485,13 @@ function DashboardInner() {
   useEffect(() => {
     if (!selectedRoom) {
       setRoomMessages([]);
+      setRoomCursor(undefined);
+      setRoomHasMore(false);
       return;
     }
+    setRoomMessages([]);
+    setRoomCursor(undefined);
+    setRoomHasMore(false);
     const cached = messagesCacheRef.current.rooms[selectedRoom.id];
     if (cached?.length) setRoomMessages(cached);
     else setRoomMessages([]);
@@ -453,10 +500,16 @@ function DashboardInner() {
     api<RoomThreadResponse>(`/rooms/${selectedRoom.id}/messages`, { method: 'GET' })
       .then((data) => {
         setRoomMessages(data.messages);
+        setRoomCursor(data.nextCursor);
+        setRoomHasMore(data.hasMore);
         messagesCacheRef.current.rooms[selectedRoom.id] = data.messages;
         pendingJumpToBottomRef.current = true;
       })
-      .catch(() => setRoomMessages([]))
+      .catch(() => {
+        setRoomMessages([]);
+        setRoomCursor(undefined);
+        setRoomHasMore(false);
+      })
       .finally(() => setLoadingRoomMessages(false));
   }, [selectedRoom]);
 
@@ -467,12 +520,66 @@ function DashboardInner() {
       api<RoomThreadResponse>(`/rooms/${roomId}/messages`, { method: 'GET' })
         .then((data) => {
           setRoomMessages(data.messages);
+          setRoomCursor(data.nextCursor);
+          setRoomHasMore(data.hasMore);
           messagesCacheRef.current.rooms[roomId] = data.messages;
         })
         .catch(() => {});
     }, 20000);
     return () => clearInterval(id);
   }, [selectedRoom]);
+
+  const loadMoreMessages = useCallback(async () => {
+    if (msgLoadingMore || !msgHasMore || !selected) return;
+    setMsgLoadingMore(true);
+    const el = chatRef.current;
+    const prevTop = el?.scrollTop ?? 0;
+    const prevHeight = el?.scrollHeight ?? 0;
+    try {
+      const res = await api<ThreadResponse>(
+        `/messages?with=${selected.user.id}&before=${msgCursor ?? ''}&limit=50`,
+      );
+      setMessages((prev) => [...res.messages, ...prev]); // старые сверху
+      setMsgCursor(res.nextCursor);
+      setMsgHasMore(res.hasMore);
+      requestAnimationFrame(() => {
+        const nextEl = chatRef.current;
+        if (!nextEl) return;
+        const nextHeight = nextEl.scrollHeight;
+        nextEl.scrollTop = prevTop + (nextHeight - prevHeight);
+      });
+    } catch {
+      // ignore
+    } finally {
+      setMsgLoadingMore(false);
+    }
+  }, [msgLoadingMore, msgHasMore, selected, msgCursor]);
+
+  const loadMoreRoomMessages = useCallback(async () => {
+    if (roomLoadingMore || !roomHasMore || !selectedRoom) return;
+    setRoomLoadingMore(true);
+    const el = chatRef.current;
+    const prevTop = el?.scrollTop ?? 0;
+    const prevHeight = el?.scrollHeight ?? 0;
+    try {
+      const res = await api<RoomThreadResponse>(
+        `/rooms/${selectedRoom.id}/messages?before=${roomCursor ?? ''}&limit=50`,
+      );
+      setRoomMessages((prev) => [...res.messages, ...prev]);
+      setRoomCursor(res.nextCursor);
+      setRoomHasMore(res.hasMore);
+      requestAnimationFrame(() => {
+        const nextEl = chatRef.current;
+        if (!nextEl) return;
+        const nextHeight = nextEl.scrollHeight;
+        nextEl.scrollTop = prevTop + (nextHeight - prevHeight);
+      });
+    } catch {
+      // ignore
+    } finally {
+      setRoomLoadingMore(false);
+    }
+  }, [roomLoadingMore, roomHasMore, selectedRoom, roomCursor]);
 
   useEffect(() => {
     const el = chatRef.current;
@@ -640,12 +747,15 @@ function DashboardInner() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const vv = window.visualViewport;
-    if (!vv) return;
+    if (!vv) {
+      document.documentElement.style.setProperty('--vvh', `${window.innerHeight}px`);
+      return;
+    }
 
     const setVars = () => {
       const viewportHeight = Math.round(vv.height);
       document.documentElement.style.setProperty('--vvh', `${viewportHeight}px`);
-      // keyboard-inset = 0 потому что inputAccessoryView Safari уже включён в vv.height
+      // keyboard-inset = 0: inputAccessoryView Safari уже включён в vv.height
       document.documentElement.style.setProperty('--keyboard-inset', '0px');
       // таббар скрываем когда чат открыт на весь экран
       document.documentElement.style.setProperty(
@@ -1051,7 +1161,11 @@ function DashboardInner() {
                                   userId: c.user.id,
                                   className: 'h-11 w-11 rounded-full',
                                 })}
-                                <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-950" />
+                                <span
+                                  className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white dark:border-slate-950 ${
+                                    isOnline(c.user.id) ? 'bg-emerald-400' : 'bg-slate-400'
+                                  }`}
+                                />
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
@@ -1282,13 +1396,48 @@ function DashboardInner() {
                     className: 'h-12 w-12 rounded-[18px]',
                   })
                 )}
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h3 className="truncate text-[17px] font-semibold tracking-tight text-slate-900 dark:text-white">{selectedName}</h3>
                   <p className="mt-1 flex items-center gap-2 text-[13px] text-slate-500 dark:text-slate-300/80">
                     <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.85)]" />
                     {selectedRoom ? (isEn ? 'Room chat' : 'Комната') : (isEn ? 'Direct conversation' : 'Личный диалог')}
                   </p>
                 </div>
+                {selected && !selectedRoom && (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = selected.user.name || selected.user.email || '';
+                        router.push(
+                          `/calls?peerId=${selected.user.id}&peerName=${encodeURIComponent(name)}&video=false`,
+                        );
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-500 transition-all hover:bg-white hover:text-slate-800 dark:border-white/10 dark:bg-white/8 dark:text-slate-400 dark:hover:bg-white/14 dark:hover:text-white"
+                      title={isEn ? 'Voice call' : 'Аудиозвонок'}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                        <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = selected.user.name || selected.user.email || '';
+                        router.push(
+                          `/calls?peerId=${selected.user.id}&peerName=${encodeURIComponent(name)}&video=true`,
+                        );
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-500 transition-all hover:bg-white hover:text-slate-800 dark:border-white/10 dark:bg-white/8 dark:text-slate-400 dark:hover:bg-white/14 dark:hover:text-white"
+                      title={isEn ? 'Video call' : 'Видеозвонок'}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                        <path d="M23 7l-7 5 7 5V7z" />
+                        <rect x="1" y="5" width="15" height="14" rx="2" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div
@@ -1296,6 +1445,45 @@ function DashboardInner() {
                 className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-8 overscroll-contain"
               >
                 <div className="mx-auto w-full max-w-[720px] space-y-6">
+                  {/* Кнопка загрузить ещё — direct */}
+                  {!isRoomChat && msgHasMore && (
+                    <div className="flex justify-center py-3">
+                      <button
+                        onClick={() => void loadMoreMessages()}
+                        disabled={msgLoadingMore}
+                        className="rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-slate-400 transition-all hover:bg-white/10 disabled:opacity-50"
+                      >
+                        {msgLoadingMore ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-3 w-3 animate-spin rounded-full border border-slate-400 border-t-transparent" />
+                            Загрузка...
+                          </span>
+                        ) : (
+                          '↑ Загрузить предыдущие'
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Кнопка загрузить ещё — room */}
+                  {isRoomChat && roomHasMore && (
+                    <div className="flex justify-center py-3">
+                      <button
+                        onClick={() => void loadMoreRoomMessages()}
+                        disabled={roomLoadingMore}
+                        className="rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-slate-400 transition-all hover:bg-white/10 disabled:opacity-50"
+                      >
+                        {roomLoadingMore ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-3 w-3 animate-spin rounded-full border border-slate-400 border-t-transparent" />
+                            Загрузка...
+                          </span>
+                        ) : (
+                          '↑ Загрузить предыдущие'
+                        )}
+                      </button>
+                    </div>
+                  )}
                   {isRoomChat ? (
                     loadingRoomMessages && roomMessages.length === 0 ? (
                       <p className="py-6 text-center text-sm text-slate-400">{isEn ? 'Loading...' : 'Загрузка...'}</p>
@@ -1639,9 +1827,18 @@ function DashboardInner() {
                       value={messageText}
                       onChange={(e) => {
                         setMessageText(e.target.value);
-                        if (!isRoomChat) {
-                          setIsTyping(true);
-                          setTimeout(() => setIsTyping(false), 1500);
+                        if (!isRoomChat && selected) {
+                          emitTyping({ peerId: selected.user.id });
+                          if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+                          typingTimerRef.current = setTimeout(() => {
+                            emitStopTyping({ peerId: selected.user.id });
+                          }, 2000);
+                        } else if (isRoomChat && selectedRoom) {
+                          emitTyping({ roomId: selectedRoom.id });
+                          if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+                          typingTimerRef.current = setTimeout(() => {
+                            emitStopTyping({ roomId: selectedRoom.id });
+                          }, 2000);
                         }
                       }}
                       placeholder={isRoomChat ? (isEn ? 'Message to room...' : 'Сообщение в комнату...') : (isEn ? 'Message...' : 'Сообщение...')}

@@ -22,6 +22,7 @@ import { PrismaService } from './prisma/prisma.service.js';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
+    rawBody: true,
   });
   // Render и другие reverse proxy передают реальный IP через X-Forwarded-For
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
@@ -85,11 +86,20 @@ async function bootstrap() {
     message: { ok: false, error: 'Too many attempts. Try again later.' },
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: true,
   });
+
+  const refreshLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100, // много — refresh легитимный
+    skipSuccessfulRequests: true, // считаем только неудачные
+    message: { ok: false, error: 'Too many attempts' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
   app.use('/auth/login', authLimiter);
   app.use('/auth/register', authLimiter);
-  app.use('/auth/refresh', authLimiter);
+  app.use('/auth/refresh', refreshLimiter);
   app.use('/auth/2fa/challenge', authLimiter);
 
   const generalLimiter = rateLimit({

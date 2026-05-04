@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditLogService } from '../security/audit-log.service.js';
 import { hashPassword, verifyPassword } from '../security/password.util.js';
+import { Plan } from '@prisma/client';
 
 export type MeResult = {
   id: string;
@@ -96,6 +97,84 @@ export class UsersService {
       select: { id: true, action: true, ipAddress: true, severity: true, createdAt: true },
     });
     return { logs };
+  }
+
+  async getPlan(userId: string): Promise<{
+    plan: string;
+    planExpiresAt: Date | null;
+    isActive: boolean;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { plan: true, planExpiresAt: true },
+    });
+    if (!user) throw new BadRequestException('User not found');
+
+    const isActive =
+      user.plan === 'FREE' ||
+      !user.planExpiresAt ||
+      user.planExpiresAt > new Date();
+
+    if (user.plan !== 'FREE' && user.planExpiresAt && user.planExpiresAt <= new Date()) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { plan: 'FREE', planExpiresAt: null },
+      });
+      return { plan: 'FREE', planExpiresAt: null, isActive: true };
+    }
+
+    return {
+      plan: user.plan,
+      planExpiresAt: user.planExpiresAt,
+      isActive,
+    };
+  }
+
+  async setPlan(
+    userId: string,
+    plan: 'FREE' | 'PRO' | 'TEAM',
+    expiresAt?: Date,
+  ): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        plan: plan as Plan,
+        planExpiresAt: expiresAt ?? null,
+      },
+    });
+  }
+
+  async getPlanLimits(plan: string): Promise<{
+    maxInvites: number;
+    maxRooms: number;
+    maxRoomMembers: number;
+    unlimitedHistory: boolean;
+    e2eRooms: boolean;
+  }> {
+    const limits = {
+      FREE: {
+        maxInvites: 3,
+        maxRooms: 2,
+        maxRoomMembers: 10,
+        unlimitedHistory: false,
+        e2eRooms: false,
+      },
+      PRO: {
+        maxInvites: -1,
+        maxRooms: 10,
+        maxRoomMembers: 50,
+        unlimitedHistory: true,
+        e2eRooms: true,
+      },
+      TEAM: {
+        maxInvites: -1,
+        maxRooms: -1,
+        maxRoomMembers: 200,
+        unlimitedHistory: true,
+        e2eRooms: true,
+      },
+    };
+    return limits[plan as keyof typeof limits] ?? limits.FREE;
   }
 }
 

@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Plan {
+  FREE
+  PRO
+  TEAM
+}
+
 model User {
   id           String   @id @default(cuid())
   createdAt    DateTime @default(now())
@@ -18,6 +24,11 @@ model User {
   avatarUrl    String?
   isVerified   Boolean  @default(false)
   isAdmin      Boolean  @default(false)
+
+  // Монетизация
+  plan             Plan    @default(FREE)
+  planExpiresAt    DateTime?
+  stripeCustomerId String? @unique
   registeredViaInviteId String?
   totpSecret          String?
   pendingTotpSecret   String?
@@ -37,6 +48,24 @@ model User {
   connectionRequestsSent ConnectionRequest[] @relation("ConnectionRequestFrom")
   connectionRequestsReceived ConnectionRequest[] @relation("ConnectionRequestTo")
   refreshTokens RefreshToken[]
+  pushSubscriptions PushSubscription[]
+  subscription Subscription?
+}
+
+model Subscription {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  stripeSubId        String   @unique
+  stripePriceId      String
+  status             String
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model EmailVerification {
@@ -153,6 +182,19 @@ model RefreshToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AuditLog {

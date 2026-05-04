@@ -238,14 +238,10 @@ body {
   }
 }
 
-/* ─── Mobile Safari / Chrome iOS fix ───────────────────────── */
+/* ─── Mobile Safari / Chrome iOS ────────────────────────────── */
 html, body {
   overflow-x: hidden;
   overscroll-behavior: none;
-}
-
-:root {
-  --vvh: 100dvh;
 }
 
 .pb-safe {

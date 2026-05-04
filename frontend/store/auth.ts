@@ -3,16 +3,24 @@ import { persist } from 'zustand/middleware';
 import { useNotificationsStore } from './notifications';
 import { useChatActivityStore } from './chat-activity';
 
-export type User = { id: string; email: string; name: string | null; avatarUrl?: string | null; isAdmin?: boolean };
+export type User = {
+  id: string;
+  email: string;
+  name: string | null;
+  avatarUrl?: string | null;
+  isAdmin?: boolean;
+  isVerified?: boolean;
+  plan?: Plan;
+  planExpiresAt?: string | null;
+};
+
+export type Plan = 'FREE' | 'PRO' | 'TEAM';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // Access token держим только в памяти (не в localStorage), чтобы снизить риск XSS.
 let _accessToken: string | null = null;
 export const getAccessToken = () => _accessToken;
-
-/** Один общий refresh на все параллельные вызовы (React Strict Mode дергает useEffect дважды). */
-let restoreSessionInFlight: Promise<boolean> | null = null;
 
 type AuthState = {
   accessToken: string | null;
@@ -64,57 +72,46 @@ export const useAuthStore = create<AuthState>()(
         set({ user: null, accessToken: null });
       },
       tryRestoreSession: async (): Promise<boolean> => {
-        if (restoreSessionInFlight) return restoreSessionInFlight;
-
-        restoreSessionInFlight = (async (): Promise<boolean> => {
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            // Пробуем до 2 раз — первая попытка может упасть из-за сети
-            for (let attempt = 0; attempt < 2; attempt++) {
-              try {
-                const res = await fetch(`${API_URL}/auth/refresh`, {
-                  method: 'POST',
-                  credentials: 'include',
-                  headers: { 'Content-Type': 'application/json' },
-                });
-                const isJson = res.headers.get('content-type')?.includes('application/json');
-                const data = isJson ? await res.json().catch(() => null) : null;
+            const res = await fetch(`${API_URL}/auth/refresh`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+            });
 
-                if (res.ok && data?.ok && data.accessToken) {
-                  _accessToken = data.accessToken;
-                  set({
-                    accessToken: data.accessToken,
-                    user: data.user ?? null,
-                    hydrated: true,
-                  });
-                  return true;
-                }
+            const isJson = res.headers.get('content-type')?.includes('application/json');
+            const data = isJson ? await res.json().catch(() => null) : null;
 
-                // 401 — сессия истекла, нет смысла повторять
-                if (res.status === 401) break;
-
-                // Другая ошибка (500, сеть) — повторим через 800ms
-                if (attempt === 0) {
-                  await new Promise((r) => setTimeout(r, 800));
-                  continue;
-                }
-              } catch {
-                // Сеть недоступна — повторим через 800ms
-                if (attempt === 0) {
-                  await new Promise((r) => setTimeout(r, 800));
-                  continue;
-                }
-              }
+            if (res.ok && data?.ok && data.accessToken) {
+              _accessToken = data.accessToken;
+              set({
+                accessToken: data.accessToken,
+                user: data.user ?? null,
+                hydrated: true,
+              });
+              return true;
             }
 
-            _accessToken = null;
-            set({ user: null, accessToken: null, hydrated: true });
-            return false;
-          } finally {
-            restoreSessionInFlight = null;
-          }
-        })();
+            // 401 — сессия истекла, повторять бессмысленно
+            if (res.status === 401) break;
 
-        return restoreSessionInFlight;
+            // 500 или сеть — ждём и повторяем
+            if (attempt === 0) {
+              await new Promise((r) => setTimeout(r, 800));
+              continue;
+            }
+          } catch {
+            if (attempt === 0) {
+              await new Promise((r) => setTimeout(r, 800));
+              continue;
+            }
+          }
+        }
+
+        _accessToken = null;
+        set({ user: null, accessToken: null, hydrated: true });
+        return false;
       },
 
       scheduleRefresh: () => {

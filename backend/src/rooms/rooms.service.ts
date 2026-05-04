@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { hashPassword, verifyPassword } from '../security/password.util.js';
 import { mapMessagesText, prepareMessageForApi, prepareMessageForStorage } from '../security/message-encryption.util.js';
 import { ChatGateway } from '../chat/chat.gateway.js';
+import { PlanGuardService } from '../common/plan-guard.service.js';
 
 interface MembershipWithRoom {
   room: { id: string; name: string; ownerId: string; expiresAt: Date; owner: { id: string; email: string; name: string | null; avatarUrl: string | null } };
@@ -26,6 +27,7 @@ export class RoomsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatGateway: ChatGateway,
+    private readonly planGuard: PlanGuardService,
   ) {}
 
   private async cleanupExpired() {
@@ -54,6 +56,8 @@ export class RoomsService {
   }
 
   async createRoom(userId: string, name: string, password: string) {
+    await this.planGuard.checkRoomLimit(userId);
+
     const passwordHash = await hashPassword(password);
     const expiresAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
     const room = await this.prisma.room.create({
@@ -76,6 +80,9 @@ export class RoomsService {
       include: { owner: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });
     if (!room) throw new NotFoundException('Комната не найдена');
+
+    await this.planGuard.checkRoomMembersLimit(roomId, room.ownerId);
+
     const ok = await verifyPassword(password, room.passwordHash);
     if (!ok) throw new ForbiddenException('Неверный пароль комнаты');
     await this.prisma.roomMember.upsert({

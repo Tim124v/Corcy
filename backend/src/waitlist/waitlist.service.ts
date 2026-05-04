@@ -247,5 +247,25 @@ export class WaitlistService {
     ]);
     return { total, pending, invited };
   }
+
+  async rejectEntry(waitlistId: string, adminUserId: string) {
+    await this.assertAdmin(adminUserId);
+    const entry = await this.prisma.waitlist.findUnique({ where: { id: waitlistId } });
+    if (!entry) throw new BadRequestException('Waitlist entry not found');
+    if (entry.status === 'rejected') throw new BadRequestException('Already rejected');
+    await this.prisma.waitlist.update({
+      where: { id: waitlistId },
+      data: { status: 'rejected' },
+    });
+    return { ok: true, message: `Rejected ${entry.email}` };
+  }
+
+  async deleteEntry(waitlistId: string, adminUserId: string) {
+    await this.assertAdmin(adminUserId);
+    const entry = await this.prisma.waitlist.findUnique({ where: { id: waitlistId } });
+    if (!entry) throw new BadRequestException('Waitlist entry not found');
+    await this.prisma.waitlist.delete({ where: { id: waitlistId } });
+    return { ok: true };
+  }
 }
 

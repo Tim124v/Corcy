@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 import { useChatActivityStore } from '../../store/chat-activity';
+import { useAuthStore } from '../../store/auth';
 
 type Tab = {
   href: string;
@@ -112,6 +113,8 @@ function ProfileIcon() {
 
 export function MobileTabBar() {
   const pathname = usePathname();
+  const user = useAuthStore((s) => s.user);
+  const isPro = user?.plan === 'PRO' || user?.plan === 'TEAM';
   const unreadTotal = useChatActivityStore((s) => {
     const direct = Object.values(s.unreadDirectCount).reduce((sum, n) => sum + (Number.isFinite(n) ? n : 0), 0);
     const rooms = Object.values(s.unreadRoomCount).reduce((sum, n) => sum + (Number.isFinite(n) ? n : 0), 0);
@@ -160,6 +163,7 @@ export function MobileTabBar() {
         {tabs.map((t) => {
           const active = t.isActive(pathname);
           const isChats = t.href === '/dashboard';
+          const isProfile = t.href === '/profile';
           const badgeText = unreadTotal > 99 ? '99+' : unreadTotal > 0 ? String(unreadTotal) : null;
           return (
             <Link
@@ -186,6 +190,9 @@ export function MobileTabBar() {
                     >
                       {badgeText}
                     </span>
+                  )}
+                  {isProfile && isPro && (
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-indigo-500 ring-1 ring-slate-950" />
                   )}
                 </span>
               </span>

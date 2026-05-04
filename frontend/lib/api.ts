@@ -122,8 +122,10 @@ export async function api<T>(path: string, options: RequestInit & { token?: stri
       ? await res.json().catch(() => ({ message: res.statusText }))
       : { message: res.statusText };
     const msg =
-      (err as { error?: string; message?: string }).error ||
-      (err as { message?: string }).message ||
+      (Array.isArray((err as { message?: unknown }).message)
+        ? ((err as { message?: unknown }).message as unknown[]).join(', ')
+        : (err as { message?: string }).message) ||
+      (err as { error?: string }).error ||
       res.statusText;
     throw new Error(msg);
   }

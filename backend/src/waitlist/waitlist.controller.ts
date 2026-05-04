@@ -1,6 +1,6 @@
 import {
   Controller, Post, Get, Param, Body, Req,
-  UseGuards, Query, HttpCode,
+  UseGuards, Query, HttpCode, Delete,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
@@ -60,6 +60,26 @@ export class WaitlistController {
     @ReqUser() user: { id: string },
   ) {
     return this.waitlist.sendInvite(id, user.id);
+  }
+
+  @Post(':id/reject')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @HttpCode(200)
+  async rejectEntry(
+    @Param('id') id: string,
+    @ReqUser() user: { id: string },
+  ) {
+    return this.waitlist.rejectEntry(id, user.id);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @HttpCode(200)
+  async deleteEntry(
+    @Param('id') id: string,
+    @ReqUser() user: { id: string },
+  ) {
+    return this.waitlist.deleteEntry(id, user.id);
   }
 }
 

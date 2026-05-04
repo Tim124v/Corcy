@@ -235,4 +235,13 @@ export class AuthController {
     if (!ok) return { ok: false, error: 'Invalid TOTP code' };
     return { ok: true };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/disable')
+  async disableTwoFactor(@ReqUser() user: { id: string }, @Body() body: { token?: string }) {
+    if (!body?.token) return { ok: false, error: 'Token required' };
+    const ok = await this.twoFactor.disableTotp(user.id, body.token);
+    if (!ok) return { ok: false, error: 'Неверный код' };
+    return { ok: true };
+  }
 }

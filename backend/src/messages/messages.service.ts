@@ -2,12 +2,14 @@ import { Injectable, ForbiddenException, BadRequestException, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { mapMessagesText, prepareMessageForApi, prepareMessageForStorage } from '../security/message-encryption.util.js';
 import { ChatGateway } from '../chat/chat.gateway.js';
+import { PushService } from '../auth/push.service.js';
 
 @Injectable()
 export class MessagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatGateway: ChatGateway,
+    private readonly push: PushService,
   ) {}
 
   async getThread(
@@ -97,6 +99,23 @@ export class MessagesService {
       ...messageForClient,
       text: text.trim(),
     });
+
+    if (!this.chatGateway.isOnline(to)) {
+      const senderName = await this.prisma.user.findUnique({
+        where: { id: currentUserId },
+        select: { name: true, email: true },
+      });
+      const name = senderName?.name || senderName?.email?.split('@')[0] || 'Connexy';
+      const bodyText = hasText ? text.trim() : attachment?.name?.trim() || 'Connexy';
+
+      void this.push
+        .sendToUser(to, {
+          title: name,
+          body: bodyText.slice(0, 100),
+          url: '/dashboard',
+        })
+        .catch(() => {});
+    }
 
     return messageForClient;
   }
