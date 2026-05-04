@@ -941,7 +941,7 @@ function DashboardInner() {
 
   return (
     <main
-      className="app-page-bg relative overflow-hidden text-slate-900 dark:text-slate-50"
+      className="app-page-bg relative flex min-h-0 w-full min-w-0 flex-col overflow-hidden text-slate-900 dark:text-slate-50"
       style={{ height: 'var(--vvh, 100dvh)' }}
     >
       <div className="pointer-events-none absolute inset-0">
@@ -956,9 +956,7 @@ function DashboardInner() {
         />
       </div>
 
-      <div
-        className="relative z-10 mx-auto flex h-full w-full max-w-[1360px] flex-col gap-3 px-3 pt-3 pb-4 lg:gap-4 lg:px-6 lg:py-5"
-      >
+      <div className="relative z-10 flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3 overflow-hidden px-3 pb-4 pt-1 lg:gap-4 lg:px-6 lg:py-5 lg:pt-5">
         <div className={`hidden items-center gap-3 rounded-[30px] px-6 py-4 backdrop-blur-xl lg:flex ${
           isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_24px_50px_-34px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.04)]'
@@ -975,78 +973,31 @@ function DashboardInner() {
           />
         </div>
 
-        <div
-          className="grid h-full overflow-hidden grid-cols-1 gap-4 lg:gap-5 lg:grid-cols-[352px,1fr]"
-        >
-        {/* Mobile header (Telegram-like): sticky, компактный */}
-        <div
-          className="lg:hidden sticky top-0 z-30 -mx-3 px-3 pb-2"
-          style={{
-            paddingTop: 'calc(env(safe-area-inset-top) + 0.25rem)',
-            background: isDarkTheme ? 'rgba(2,6,23,0.75)' : 'rgba(243,246,251,0.72)',
-            backdropFilter: 'blur(16px)',
-          }}
-        >
-          <div className="flex items-center justify-between gap-3 px-1">
-            <button
-              type="button"
-              onClick={() => router.push('/profile')}
-              className="shrink-0 rounded-2xl p-0.5"
-              aria-label={isEn ? 'Open profile' : 'Открыть профиль'}
-            >
-              {renderAvatar({
-                name: user?.name,
-                email: user?.email,
-                photo: profilePhoto,
-                userId: user?.id,
-                className: 'h-10 w-10 rounded-2xl shadow-lg shadow-blue-500/15',
-              })}
-            </button>
-
-            <div className="min-w-0 flex-1 text-center">
-              <div className="text-[17px] font-semibold tracking-tight text-slate-900 dark:text-white">
-                {isEn ? 'Chats' : 'Чаты'}
-              </div>
-              <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
-                {user?.name || user?.email}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                mobileSearchRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                setTimeout(() => mobileSearchRef.current?.focus(), 150);
-              }}
-              className={`shrink-0 rounded-2xl p-2 transition ${
-                isDarkTheme ? 'text-slate-200 hover:bg-white/10' : 'text-slate-700 hover:bg-slate-900/5'
-              }`}
-              aria-label={isEn ? 'Search' : 'Поиск'}
-              title={isEn ? 'Search' : 'Поиск'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="h-5 w-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Chats list */}
+        <div className="grid min-h-0 flex-1 auto-rows-[minmax(0,1fr)] grid-cols-1 gap-0 overflow-hidden lg:gap-5 lg:grid-cols-[352px,1fr]">
+        {/* Chats list — на мобилке заголовок «Чаты» внутри карточки сразу над поиском (без зазора grid) */}
         <section className={`
-          w-full lg:w-[352px] flex-shrink-0
+          w-full min-h-0 flex-shrink-0 lg:w-[352px]
           ${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'}
-          flex-col overflow-hidden rounded-[26px] p-3 backdrop-blur-xl sm:p-4 lg:rounded-[34px] lg:p-4
+          min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] p-3 backdrop-blur-xl sm:p-4 lg:min-h-0 lg:flex-none lg:rounded-[34px] lg:p-4
           ${isDarkTheme
             ? 'bg-slate-900/88 shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]'
             : 'bg-white/72 shadow-[0_28px_70px_-42px_rgba(148,163,184,0.42)]'
           }
         `}>
-          <div className={`flex min-h-full flex-col rounded-[22px] p-3 sm:p-4 lg:rounded-[28px] ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-50/60'}`}>
-            <div className={`mb-3 flex items-center gap-3 rounded-[18px] px-3 py-2.5 sm:mb-5 sm:rounded-[20px] sm:px-4 sm:py-3.5 ${
-              isDarkTheme
-                ? 'bg-slate-900/72 shadow-[0_16px_34px_-30px_rgba(0,0,0,0.56)]'
-                : 'bg-white/96 shadow-[0_14px_30px_-24px_rgba(148,163,184,0.32)]'
-            }`}>
+          <h1
+            className="mb-1.5 shrink-0 px-1 text-[20px] font-semibold leading-tight tracking-tight text-slate-900 dark:text-white lg:hidden"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.25rem)' }}
+          >
+            {isEn ? 'Chats' : 'Чаты'}
+          </h1>
+          <div className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] px-3 pb-3 pt-0 sm:p-4 lg:rounded-[28px] ${isDarkTheme ? 'bg-slate-950/52' : 'bg-slate-50/60'}`}>
+            <div
+              className={`mb-2 flex items-center gap-3 rounded-[18px] px-3 py-2.5 sm:mb-5 sm:rounded-[20px] sm:px-4 sm:py-3.5 lg:hidden ${
+                isDarkTheme
+                  ? 'bg-slate-900/72 shadow-[0_16px_34px_-30px_rgba(0,0,0,0.56)]'
+                  : 'bg-white/96 shadow-[0_14px_30px_-24px_rgba(148,163,184,0.32)]'
+              }`}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="h-5 w-5 text-slate-500 dark:text-slate-400">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
               </svg>
@@ -1059,7 +1010,7 @@ function DashboardInner() {
               />
             </div>
 
-            <div className="flex flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <div>
                 <div className="mb-3 text-[13px] font-semibold tracking-tight text-slate-900 dark:text-white">{isEn ? 'Direct Messages' : 'Личные сообщения'}</div>
                 <div className="space-y-2.5">
@@ -1273,7 +1224,6 @@ function DashboardInner() {
                   </div>
                 )}
               </div>
-              <div className="flex-1" />
             </div>
           </div>
         </section>

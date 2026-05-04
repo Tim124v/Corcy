@@ -29,6 +29,12 @@ export class ConnectionsController {
     return this.connections.listInvites(user.id);
   }
 
+  @Delete('invites/history')
+  @UseGuards(JwtAuthGuard)
+  async clearInvitesHistory(@ReqUser() user: { id: string }) {
+    return this.connections.clearInvitesHistory(user.id);
+  }
+
   @Delete('invites/:id')
   @UseGuards(JwtAuthGuard)
   async revoke(@ReqUser() user: { id: string }, @Param('id') id: string) {
