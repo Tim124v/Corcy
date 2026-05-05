@@ -1,21 +1,18 @@
 {
-  "name": "Connexy",
-  "short_name": "Connexy",
+  "name": "Corsy",
+  "short_name": "Corsy",
   "description": "Private connections and chats",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
-  "background_color": "#0a0f1e",
+  "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "start_url": "/dashboard",
   "scope": "/",
-  "lang": "ru",
-  "categories": ["social", "productivity"],
   "icons": [
     {
-      "src": "/connexy_favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
       "purpose": "any"
     },
     {
@@ -34,13 +31,7 @@
   "shortcuts": [
     {
       "name": "Чаты",
-      "url": "/dashboard",
-      "description": "Открыть чаты"
-    },
-    {
-      "name": "Контакты",
-      "url": "/contacts",
-      "description": "Открыть контакты"
+      "url": "/dashboard"
     }
   ]
 }

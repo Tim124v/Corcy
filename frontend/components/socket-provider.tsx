@@ -90,7 +90,7 @@ export function SocketProvider() {
       if (!msg?.senderId) return;
       incrementUnreadDirectRef.current(msg.senderId);
       playSound();
-      notify('CONNEXY', msg.text?.slice(0, 80) || 'New message', `direct-${msg.senderId}`);
+      notify('Corsy', msg.text?.slice(0, 80) || 'New message', `direct-${msg.senderId}`);
     });
 
     socket.on('newRoomMessage', (data: unknown) => {
@@ -98,7 +98,7 @@ export function SocketProvider() {
       if (!msg?.roomId) return;
       incrementUnreadRoomRef.current(msg.roomId);
       playSound();
-      notify('CONNEXY', msg.text?.slice(0, 80) || 'New room message', `room-${msg.roomId}`);
+      notify('Corsy', msg.text?.slice(0, 80) || 'New room message', `room-${msg.roomId}`);
     });
 
     socket.on('presenceInit', (data: unknown) => {

@@ -127,11 +127,19 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                 height={38}
                 className="shrink-0 drop-shadow-[0_0_10px_rgba(99,102,241,0.7)]"
               />
-              <div className="flex flex-col leading-tight">
-                <span className="font-bold text-slate-900 dark:text-white tracking-[0.15em] text-[15px]">
-                  CONNEXY
+              <div className="flex min-h-[38px] flex-col justify-center gap-1">
+                <span
+                  className="text-[22px] font-bold leading-none tracking-[-0.03em]"
+                  style={{
+                    background: 'linear-gradient(180deg, #ffffff 0%, #eef2ff 38%, #a5b4fc 72%, #7c83ff 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  Corsy
                 </span>
-                <span className="text-[9px] text-blue-600/70 dark:text-blue-400/70 tracking-[0.25em] uppercase font-medium">
+                <span className="text-[9px] font-medium uppercase leading-none tracking-[0.08em] text-slate-500 dark:text-white/45">
                   Private · Secure
                 </span>
               </div>
