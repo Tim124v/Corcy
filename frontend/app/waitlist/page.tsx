@@ -59,8 +59,22 @@ export default function WaitlistPage() {
             className="drop-shadow-[0_0_16px_rgba(99,102,241,0.7)]"
           />
           <div className="text-center">
-            <h1 className="text-lg font-bold tracking-[0.25em] text-white">CONNEXY</h1>
-            <p className="text-[10px] text-blue-400/60 tracking-[0.2em] uppercase">Private · Secure</p>
+            <div className="flex flex-col items-center justify-center gap-1">
+              <span
+                className="text-[22px] font-bold leading-none tracking-[-0.03em]"
+                style={{
+                  background: 'linear-gradient(180deg, #ffffff 0%, #eef2ff 38%, #a5b4fc 72%, #7c83ff 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                Corsy
+              </span>
+              <span className="text-[9px] font-medium uppercase leading-none tracking-[0.08em] text-slate-500 dark:text-white/45">
+                Private · Secure
+              </span>
+            </div>
           </div>
         </div>
 

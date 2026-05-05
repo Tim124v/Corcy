@@ -246,7 +246,18 @@ export default function LandingPage() {
 
           {/* Заголовок */}
           <h1 className="fade-up-2 text-4xl font-bold tracking-[0.2em] text-white sm:text-5xl sm:tracking-[0.35em] lg:text-7xl">
-            CONNEXY
+            <span
+              className="font-bold tracking-tight"
+              style={{
+                letterSpacing: '0.01em',
+                background: 'linear-gradient(135deg, #fff 0%, #a5b4fc 60%, #818cf8 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              Corsy
+            </span>
           </h1>
 
           {/* Typewriter подзаголовок */}

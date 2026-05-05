@@ -640,7 +640,7 @@ function DashboardInner() {
             if (messageAge < 25000) {
               const sender = connections.find((c) => c.user.id === peerId);
               const senderName = sender?.user.name || sender?.user.email || 'Новое сообщение';
-              showNotification('CONNEXY', {
+              showNotification('Corsy', {
                 body: `${senderName} написал вам`,
                 tag: `direct-${peerId}`,
               });
@@ -700,7 +700,7 @@ function DashboardInner() {
             if (messageAge < 25000) {
               const room = rooms.find((r) => r.id === roomId);
               const roomName = room?.name || 'Комната';
-              showNotification('CONNEXY', {
+              showNotification('Corsy', {
                 body: `Новое сообщение в комнате "${roomName}"`,
                 tag: `room-${roomId}`,
               });
