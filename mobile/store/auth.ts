@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { SecureStorage } from '../lib/secure-storage';
 import { API_URL } from '../constants/api';
+import { clearE2ESession } from '../hooks/use-e2e';
 
 export type User = {
   id: string;
@@ -34,6 +35,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   logout: async () => {
+    clearE2ESession();
     const { accessToken } = get();
     if (accessToken) {
       await fetch(`${API_URL}/auth/logout`, {

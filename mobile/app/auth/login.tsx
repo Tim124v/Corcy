@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,12 @@ import {
 import { router } from 'expo-router';
 import { useAuthStore } from '../../store/auth';
 import { API_URL } from '../../constants/api';
+import { initializeE2EStandalone, stashPasswordForE2E } from '../../hooks/use-e2e';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const passwordRef = useRef('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { setAuth } = useAuthStore();
@@ -46,12 +48,14 @@ export default function LoginScreen() {
       }
 
       if (data.requiresTwoFactor && data.tempToken) {
+        stashPasswordForE2E(passwordRef.current);
         router.push({ pathname: '/auth/two-factor', params: { tempToken: data.tempToken } });
         return;
       }
 
       if (data.accessToken && data.refreshToken && data.user) {
         await setAuth(data.user, data.accessToken, data.refreshToken);
+        void initializeE2EStandalone(data.user.id, passwordRef.current).catch(() => {});
         router.replace('/(app)/dashboard');
       }
     } catch (e) {
@@ -84,7 +88,10 @@ export default function LoginScreen() {
           placeholder="Пароль"
           placeholderTextColor="#64748b"
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(text) => {
+            setPassword(text);
+            passwordRef.current = text;
+          }}
           secureTextEntry
           autoComplete="password"
         />

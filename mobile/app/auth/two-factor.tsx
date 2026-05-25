@@ -12,6 +12,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '../../store/auth';
 import { API_URL } from '../../constants/api';
+import { initializeE2EStandalone, takePasswordForE2E } from '../../hooks/use-e2e';
 
 export default function TwoFactorScreen() {
   const { tempToken } = useLocalSearchParams<{ tempToken?: string }>();
@@ -44,6 +45,8 @@ export default function TwoFactorScreen() {
       }
 
       await setAuth(data.user, data.accessToken, data.refreshToken);
+      const pwd = takePasswordForE2E();
+      if (pwd) void initializeE2EStandalone(data.user.id, pwd).catch(() => {});
       router.replace('/(app)/dashboard');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сети');
