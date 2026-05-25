@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../lib/api';
 import { useAuthStore } from '../../store/auth';
 import { connectSocket } from '../../store/socket';
+import { useE2EMobile } from '../../hooks/use-e2e';
+import { isE2EMessage } from '../../lib/e2e-crypto-mobile';
 
 type Message = {
   id: string;
@@ -26,9 +28,12 @@ type Message = {
 export default function ChatScreen() {
   const { peerId, peerName } = useLocalSearchParams<{ peerId?: string; peerName?: string }>();
   const { user, accessToken } = useAuthStore();
+  const { encryptForPeer, decryptInContext, isE2EReady, getPeerPublicKey } = useE2EMobile(user?.id);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [e2eActive, setE2EActive] = useState(false);
+  const [decryptedTexts, setDecryptedTexts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!peerId) return;
@@ -43,6 +48,25 @@ export default function ChatScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!peerId || !isE2EReady()) {
+      setE2EActive(false);
+      return;
+    }
+    void getPeerPublicKey(peerId as string).then((key) => setE2EActive(!!key));
+  }, [peerId, isE2EReady, getPeerPublicKey]);
+
+  useEffect(() => {
+    if (!messages.length || !peerId) return;
+    messages.forEach((msg) => {
+      if (isE2EMessage(msg.text) && !decryptedTexts[msg.id]) {
+        void decryptInContext(msg.text, msg.senderId, peerId as string).then((plain) => {
+          setDecryptedTexts((prev) => ({ ...prev, [msg.id]: plain }));
+        });
+      }
+    });
+  }, [messages, peerId, decryptInContext, decryptedTexts]);
 
   useEffect(() => {
     if (!accessToken || !peerId) return;
@@ -69,11 +93,20 @@ export default function ChatScreen() {
     if (!trimmed || !peerId || sending) return;
     setSending(true);
     try {
+      let textToSend = trimmed;
+      if (e2eActive) {
+        const encrypted = await encryptForPeer(textToSend, peerId as string);
+        textToSend = encrypted.text;
+      }
       const msg = await api<Message>('/messages', {
         method: 'POST',
-        body: JSON.stringify({ receiverId: peerId, text: trimmed }),
+        body: JSON.stringify({ receiverId: peerId, text: textToSend }),
       });
       setMessages((prev) => [...prev, msg]);
+      if (isE2EMessage(msg.text) && user?.id) {
+        const plain = await decryptInContext(msg.text, msg.senderId, peerId as string);
+        setDecryptedTexts((prev) => ({ ...prev, [msg.id]: plain }));
+      }
       setText('');
     } catch {
       /* skip */
@@ -81,6 +114,9 @@ export default function ChatScreen() {
       setSending(false);
     }
   };
+
+  const displayText = (msg: Message) =>
+    decryptedTexts[msg.id] ?? (isE2EMessage(msg.text) ? '🔐 Расшифровка...' : msg.text);
 
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom']}>
@@ -91,6 +127,7 @@ export default function ChatScreen() {
         <Text style={s.headerTitle} numberOfLines={1}>
           {peerName ?? 'Чат'}
         </Text>
+        {e2eActive ? <Text style={s.e2eBadge}>🔐 E2E</Text> : null}
       </View>
 
       <FlatList
@@ -101,7 +138,7 @@ export default function ChatScreen() {
           const isMine = item.senderId === user?.id;
           return (
             <View style={[s.bubble, isMine ? s.bubbleMine : s.bubbleTheirs]}>
-              <Text style={[s.bubbleText, isMine && s.bubbleTextMine]}>{item.text}</Text>
+              <Text style={[s.bubbleText, isMine && s.bubbleTextMine]}>{displayText(item)}</Text>
             </View>
           );
         }}
@@ -138,6 +175,7 @@ const s = StyleSheet.create({
   },
   back: { padding: 4, marginRight: 8 },
   headerTitle: { fontSize: 17, fontWeight: '600', color: '#f1f5f9', flex: 1 },
+  e2eBadge: { fontSize: 10, color: '#10b981', marginLeft: 6 },
   list: { padding: 16, gap: 8 },
   bubble: {
     maxWidth: '80%',
