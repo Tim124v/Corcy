@@ -41,7 +41,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https://res.cloudinary.com",
               "font-src 'self'",
-              "connect-src 'self' wss: https:",
+              "connect-src 'self' ws: wss: http: https:",
               "media-src 'self' blob:",
               "worker-src 'self'",
               "manifest-src 'self'",
