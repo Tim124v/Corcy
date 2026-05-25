@@ -13,6 +13,8 @@ import { useNotificationsStore } from '../../store/notifications';
 import { useChatActivityStore } from '../../store/chat-activity';
 import { useBrowserNotifications } from '../../hooks/use-browser-notifications';
 import { useSocket } from '../../hooks/use-socket';
+import { useE2E } from '../../hooks/use-e2e';
+import { isE2EMessage } from '../../lib/e2e-crypto';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { MessageStatus } from '../../components/chat/MessageStatus';
@@ -31,6 +33,29 @@ type Message = {
   attachmentName?: string | null;
   attachmentType?: string | null;
   readAt?: string | null;
+  editedAt?: string | null;
+  replyTo?: {
+    id: string;
+    text: string;
+    senderId: string;
+    attachmentName?: string | null;
+  } | null;
+};
+type ReplyPreview = {
+  id: string;
+  text: string;
+  senderId: string;
+  attachmentName?: string | null;
+  senderName?: string;
+};
+type Reaction = { emoji: string; count: number; userReacted: boolean };
+type SearchResult = {
+  messageId: string;
+  peerId: string;
+  peerName: string | null;
+  peerEmail: string;
+  text: string;
+  createdAt: string;
 };
 type ThreadResponse = { messages: Message[]; hasMore: boolean; nextCursor?: string };
 type Grouped = { title: string; items: (Message | RoomMessage)[] };
@@ -54,7 +79,24 @@ type Room = {
   isOwner: boolean;
   expiresAt?: string;
 };
-type RoomMessage = { id: string; text: string; senderId: string; createdAt: string; systemEventType?: string; attachmentUrl?: string | null; attachmentName?: string | null; attachmentType?: string | null; sender: { id: string; email: string; name: string | null; avatarUrl?: string | null } };
+type RoomMessage = {
+  id: string;
+  text: string;
+  senderId: string;
+  createdAt: string;
+  systemEventType?: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  attachmentType?: string | null;
+  editedAt?: string | null;
+  replyTo?: {
+    id: string;
+    text: string;
+    senderId: string;
+    attachmentName?: string | null;
+  } | null;
+  sender: { id: string; email: string; name: string | null; avatarUrl?: string | null };
+};
 type RoomThreadResponse = { messages: RoomMessage[]; hasMore: boolean; nextCursor?: string };
 
 const initials = (name?: string | null, email?: string) => {
@@ -133,6 +175,38 @@ const isTimestampNewer = (nextTimestamp: string | null, prevTimestamp?: string) 
   if (!prevTimestamp) return true;
   return new Date(nextTimestamp).getTime() > new Date(prevTimestamp).getTime();
 };
+
+function QuoteBubble({
+  replyTo,
+  isMine,
+  allMessages,
+  isEn,
+}: {
+  replyTo: { id: string; text: string; senderId: string; attachmentName?: string | null };
+  isMine: boolean;
+  allMessages: { id: string; senderId: string }[];
+  isEn: boolean;
+}) {
+  const isReplyMine = allMessages.some(
+    (m) => m.id === replyTo.id && m.senderId === replyTo.senderId,
+  );
+  return (
+    <div
+      className={`mb-1.5 rounded-xl px-2.5 py-1.5 text-[11px] border-l-2 ${
+        isMine
+          ? 'border-white/50 bg-white/15 text-white/80'
+          : 'border-indigo-400/60 bg-slate-200/60 text-slate-600 dark:bg-slate-600/30 dark:text-slate-300'
+      }`}
+    >
+      <div className="mb-0.5 font-semibold opacity-80">
+        {isReplyMine ? (isEn ? 'You' : 'Вы') : isEn ? 'Message' : 'Сообщение'}
+      </div>
+      <div className="truncate leading-tight">
+        {replyTo.text || (replyTo.attachmentName ? `📎 ${replyTo.attachmentName}` : '…')}
+      </div>
+    </div>
+  );
+}
 
 const renderAvatar = ({
   name,
@@ -232,6 +306,33 @@ function DashboardInner() {
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [deleteActionMessageId, setDeleteActionMessageId] = useState<string | null>(null);
   const [desktopMenuMessageId, setDesktopMenuMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const editInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [reactionsMap, setReactionsMap] = useState<Record<string, Reaction[]>>({});
+  const [emojiPickerMessageId, setEmojiPickerMessageId] = useState<string | null>(null);
+  const [msgSearchOpen, setMsgSearchOpen] = useState(false);
+  const [msgSearchQuery, setMsgSearchQuery] = useState('');
+  const [msgSearchResults, setMsgSearchResults] = useState<SearchResult[]>([]);
+  const [msgSearchLoading, setMsgSearchLoading] = useState(false);
+  const [msgSearchEncrypted, setMsgSearchEncrypted] = useState(false);
+  const msgSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [roomSearchOpen, setRoomSearchOpen] = useState(false);
+  const [roomSearchQuery, setRoomSearchQuery] = useState('');
+  const [roomSearchResults, setRoomSearchResults] = useState<
+    { messageId: string; text: string; createdAt: string; sender: { id: string; name: string | null; email: string } }[]
+  >([]);
+  const [roomSearchLoading, setRoomSearchLoading] = useState(false);
+  const [roomSearchEncrypted, setRoomSearchEncrypted] = useState(false);
+  const roomSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const roomSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textInputRef = useRef<HTMLInputElement | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null);
+  const [currentChatE2E, setCurrentChatE2E] = useState(false);
+  const [decryptedTexts, setDecryptedTexts] = useState<Record<string, string>>({});
+  const { encryptForPeer, decryptInContext, isE2EReady, getPeerPublicKey } = useE2E(user?.id);
+  const loadReactionsRef = useRef<(messageId: string) => Promise<void>>(async () => {});
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastKnownIncomingDirectRef = useRef<Record<string, string>>({});
   const lastKnownIncomingRoomRef = useRef<Record<string, string>>({});
   const messagesCacheRef = useRef<{ rooms: Record<string, RoomMessage[]>; direct: Record<string, Message[]> }>({ rooms: {}, direct: {} });
@@ -317,6 +418,24 @@ function DashboardInner() {
         next[data.roomId] = arr;
         return next;
       });
+    },
+    onMessageEdited: (data) => {
+      setDecryptedTexts((prev) => {
+        const next = { ...prev };
+        delete next[data.messageId];
+        return next;
+      });
+      setMessages((prev) =>
+        prev.map((m) => (m.id === data.messageId ? { ...m, text: data.text, editedAt: data.editedAt } : m)),
+      );
+    },
+    onRoomMessageEdited: (data) => {
+      setRoomMessages((prev) =>
+        prev.map((m) => (m.id === data.messageId ? { ...m, text: data.text, editedAt: data.editedAt } : m)),
+      );
+    },
+    onReactionUpdated: (data) => {
+      void loadReactionsRef.current(data.messageId);
     },
   });
 
@@ -467,6 +586,44 @@ function DashboardInner() {
   }, [selected]);
 
   useEffect(() => {
+    setDecryptedTexts({});
+    if (!selected?.user.id || !isE2EReady()) {
+      setCurrentChatE2E(false);
+      return;
+    }
+    void getPeerPublicKey(selected.user.id).then((key) => {
+      setCurrentChatE2E(!!key);
+    });
+  }, [selected?.user.id, isE2EReady, getPeerPublicKey]);
+
+  const decryptMessageIfNeeded = useCallback(
+    async (msg: Message, peerId: string) => {
+      if (!isE2EMessage(msg.text)) return;
+      const plain = await decryptInContext(msg.text, msg.senderId, peerId);
+      setDecryptedTexts((prev) => (prev[msg.id] ? prev : { ...prev, [msg.id]: plain }));
+    },
+    [decryptInContext],
+  );
+
+  useEffect(() => {
+    if (!selected?.user.id) return;
+    const peerId = selected.user.id;
+    messages.forEach((msg) => {
+      if (isE2EMessage(msg.text)) {
+        void decryptMessageIfNeeded(msg, peerId);
+      }
+    });
+  }, [messages, selected?.user.id, decryptMessageIfNeeded]);
+
+  const messageDisplayText = useCallback(
+    (m: Message) => {
+      if (!isE2EMessage(m.text)) return m.text;
+      return decryptedTexts[m.id] ?? (isEn ? '🔐 Decrypting…' : '🔐 Расшифровка…');
+    },
+    [decryptedTexts, isEn],
+  );
+
+  useEffect(() => {
     if (!selected) return;
     const peerId = selected.user.id;
     const id = setInterval(() => {
@@ -487,8 +644,14 @@ function DashboardInner() {
       setRoomMessages([]);
       setRoomCursor(undefined);
       setRoomHasMore(false);
+      setRoomSearchOpen(false);
+      setRoomSearchQuery('');
+      setRoomSearchResults([]);
       return;
     }
+    setRoomSearchOpen(false);
+    setRoomSearchQuery('');
+    setRoomSearchResults([]);
     setRoomMessages([]);
     setRoomCursor(undefined);
     setRoomHasMore(false);
@@ -789,6 +952,17 @@ function DashboardInner() {
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [closeDesktopMenu, desktopMenuMessageId]);
 
+  useEffect(() => {
+    if (!emojiPickerMessageId) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('[data-emoji-picker="1"]')) return;
+      setEmojiPickerMessageId(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [emojiPickerMessageId]);
+
   const groupedMessages: Grouped[] = useMemo(() => {
     const byDate = new Map<string, (Message | RoomMessage)[]>();
     chatMessages.forEach((m) => {
@@ -854,9 +1028,11 @@ function DashboardInner() {
       if (!selectedRoom || (!messageText.trim() && !attachment) || !user) return;
       const textToSend = messageText.trim();
       const currentAttachment = attachment;
+      const currentReplyTo = replyTo;
       setMessageText('');
       setShowAttach(false);
       clearAttachment();
+      setReplyTo(null);
       const tempId = `temp-room-${Date.now()}`;
       const optimistic: RoomMessage = {
         id: tempId,
@@ -867,6 +1043,14 @@ function DashboardInner() {
         attachmentName: currentAttachment?.name,
         attachmentType: undefined,
         sender: { id: user.id, email: user.email ?? '', name: user.name ?? null, avatarUrl: user.avatarUrl ?? null },
+        replyTo: currentReplyTo
+          ? {
+              id: currentReplyTo.id,
+              text: currentReplyTo.text,
+              senderId: currentReplyTo.senderId,
+              attachmentName: currentReplyTo.attachmentName ?? null,
+            }
+          : null,
       };
       setRoomMessages((prev) => {
         const next = [...prev, optimistic];
@@ -892,6 +1076,7 @@ function DashboardInner() {
           body: JSON.stringify({
             text: textToSend,
             attachment: uploaded ? { url: uploaded.url, name: uploaded.originalName, type: uploaded.mimeType } : undefined,
+            replyToId: currentReplyTo?.id,
           }),
         });
         setRoomMessages((prev) => prev.map((m) => (m.id === tempId ? msg : m)));
@@ -900,16 +1085,23 @@ function DashboardInner() {
       } catch {
         setRoomMessages((prev) => prev.filter((m) => m.id !== tempId));
         if (currentAttachment) setAttachment(currentAttachment);
+        if (currentReplyTo) setReplyTo(currentReplyTo);
       }
       return;
     }
 
     if (!selected || (!messageText.trim() && !attachment) || !user) return;
     const currentAttachment = attachment;
-    const textToSend = messageText.trim();
+    let textToSend = messageText.trim();
+    if (currentChatE2E && selected && textToSend) {
+      const encrypted = await encryptForPeer(textToSend, selected.user.id);
+      textToSend = encrypted.text;
+    }
+    const currentReplyTo = replyTo;
     setMessageText('');
     setShowAttach(false);
     clearAttachment();
+    setReplyTo(null);
     const tempId = `temp-dm-${Date.now()}`;
     const optimisticMsg: Message = {
       id: tempId,
@@ -920,6 +1112,14 @@ function DashboardInner() {
       attachmentUrl: undefined,
       attachmentName: undefined,
       attachmentType: undefined,
+      replyTo: currentReplyTo
+        ? {
+            id: currentReplyTo.id,
+            text: currentReplyTo.text,
+            senderId: currentReplyTo.senderId,
+            attachmentName: currentReplyTo.attachmentName ?? null,
+          }
+        : null,
     };
     if (currentAttachment) {
       optimisticMsg.text = optimisticMsg.text || currentAttachment.name;
@@ -951,6 +1151,7 @@ function DashboardInner() {
           to: selected.user.id,
           text: textToSend,
           attachment: uploaded ? { url: uploaded.url, name: uploaded.originalName, type: uploaded.mimeType } : undefined,
+          replyToId: currentReplyTo?.id,
         }),
       });
       setMessages((prev) => prev.map((m) => (m.id === tempId ? msg : m)));
@@ -960,6 +1161,7 @@ function DashboardInner() {
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       if (currentAttachment) setAttachment(currentAttachment);
+      if (currentReplyTo) setReplyTo(currentReplyTo);
     }
   };
 
@@ -984,6 +1186,200 @@ function DashboardInner() {
       setDeletingMessageId(null);
     }
   };
+
+  const startEditMessage = useCallback(
+    (msg: Message) => {
+      setEditingMessageId(msg.id);
+      setEditingText(msg.text);
+      closeDesktopMenu();
+      setTimeout(() => editInputRef.current?.focus(), 50);
+    },
+    [closeDesktopMenu],
+  );
+
+  const cancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingText('');
+  }, []);
+
+  const startReply = useCallback(
+    (msg: Message | RoomMessage) => {
+      let senderName: string;
+      if ('sender' in msg) {
+        const rm = msg as RoomMessage;
+        senderName = rm.sender?.name || rm.sender?.email || '';
+      } else {
+        const isOwn = msg.senderId === user?.id;
+        senderName = isOwn
+          ? user?.name || user?.email || 'Вы'
+          : selected?.user.name || selected?.user.email || '';
+      }
+      setReplyTo({
+        id: msg.id,
+        text: msg.text,
+        senderId: msg.senderId,
+        attachmentName: msg.attachmentName ?? null,
+        senderName,
+      });
+      closeDesktopMenu();
+      setTimeout(() => textInputRef.current?.focus(), 50);
+    },
+    [user, selected, closeDesktopMenu],
+  );
+
+  const cancelReply = useCallback(() => {
+    setReplyTo(null);
+  }, []);
+
+  const submitEdit = useCallback(
+    async (messageId: string) => {
+      const trimmed = editingText.trim();
+      if (!trimmed) return;
+      try {
+        const updated = await api<{ ok: boolean; message?: Message }>(`/messages/${messageId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ text: trimmed }),
+        });
+        if (updated.ok && updated.message) {
+          const patch = { text: updated.message.text, editedAt: updated.message.editedAt };
+          setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, ...patch } : m)));
+        }
+      } catch {
+        // silent
+      } finally {
+        setEditingMessageId(null);
+        setEditingText('');
+      }
+    },
+    [editingText],
+  );
+
+  const submitEditRoom = useCallback(
+    async (roomId: string, messageId: string) => {
+      const trimmed = editingText.trim();
+      if (!trimmed) return;
+      try {
+        const updated = await api<{
+          ok: boolean;
+          message?: { id: string; text: string; editedAt: string | null };
+        }>(`/rooms/${roomId}/messages/${messageId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ text: trimmed }),
+        });
+        if (updated.ok && updated.message) {
+          const patch = { text: updated.message.text, editedAt: updated.message.editedAt };
+          setRoomMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, ...patch } : m)));
+        }
+      } catch {
+        // silent
+      } finally {
+        setEditingMessageId(null);
+        setEditingText('');
+      }
+    },
+    [editingText],
+  );
+
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    try {
+      await api(`/messages/${messageId}/reactions`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      });
+      const updated = await api<Reaction[]>(`/messages/${messageId}/reactions`);
+      setReactionsMap((prev) => ({ ...prev, [messageId]: updated }));
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const loadReactions = useCallback(async (messageId: string) => {
+    try {
+      const data = await api<Reaction[]>(`/messages/${messageId}/reactions`);
+      setReactionsMap((prev) => ({ ...prev, [messageId]: data }));
+    } catch {
+      // silent
+    }
+  }, []);
+
+  loadReactionsRef.current = loadReactions;
+
+  const runMsgSearch = useCallback(async (q: string) => {
+    if (q.trim().length < 2) {
+      setMsgSearchResults([]);
+      return;
+    }
+    setMsgSearchLoading(true);
+    setMsgSearchEncrypted(false);
+    try {
+      const res = await api<{ encrypted?: true; results?: SearchResult[] }>(
+        `/messages/search?q=${encodeURIComponent(q.trim())}&limit=20`,
+      );
+      if ('encrypted' in res && res.encrypted) {
+        setMsgSearchEncrypted(true);
+        setMsgSearchResults([]);
+      } else {
+        setMsgSearchResults(res.results ?? []);
+      }
+    } catch {
+      setMsgSearchResults([]);
+    } finally {
+      setMsgSearchLoading(false);
+    }
+  }, []);
+
+  const onMsgSearchChange = useCallback(
+    (q: string) => {
+      setMsgSearchQuery(q);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => runMsgSearch(q), 400);
+    },
+    [runMsgSearch],
+  );
+
+  const runRoomSearch = useCallback(
+    async (q: string) => {
+      if (!selectedRoom || q.trim().length < 2) {
+        setRoomSearchResults([]);
+        return;
+      }
+      setRoomSearchLoading(true);
+      setRoomSearchEncrypted(false);
+      try {
+        const res = await api<
+          | { encrypted: true }
+          | {
+              results: {
+                messageId: string;
+                text: string;
+                createdAt: string;
+                sender: { id: string; name: string | null; email: string };
+              }[];
+            }
+        >(`/rooms/${selectedRoom.id}/search?q=${encodeURIComponent(q.trim())}&limit=20`);
+        if ('encrypted' in res && res.encrypted) {
+          setRoomSearchEncrypted(true);
+          setRoomSearchResults([]);
+        } else {
+          setRoomSearchResults('results' in res ? (res.results ?? []) : []);
+        }
+      } catch {
+        setRoomSearchResults([]);
+      } finally {
+        setRoomSearchLoading(false);
+      }
+    },
+    [selectedRoom],
+  );
+
+  const onRoomSearchChange = useCallback(
+    (q: string) => {
+      setRoomSearchQuery(q);
+      if (roomSearchDebounceRef.current) clearTimeout(roomSearchDebounceRef.current);
+      roomSearchDebounceRef.current = setTimeout(() => runRoomSearch(q), 400);
+    },
+    [runRoomSearch],
+  );
 
   const handlePick = (file: File, kind: AttachmentDraft['type']) => {
     const preview = kind === 'media' ? URL.createObjectURL(file) : undefined;
@@ -1403,8 +1799,73 @@ function DashboardInner() {
                     {selectedRoom ? (isEn ? 'Room chat' : 'Комната') : (isEn ? 'Direct conversation' : 'Личный диалог')}
                   </p>
                 </div>
+                {isRoomChat && selectedRoom && (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRoomSearchOpen((v) => !v);
+                        setRoomSearchQuery('');
+                        setRoomSearchResults([]);
+                        setTimeout(() => roomSearchInputRef.current?.focus(), 50);
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-500 transition-all hover:bg-white hover:text-slate-800 dark:border-white/10 dark:bg-white/8 dark:text-slate-400 dark:hover:bg-white/14 dark:hover:text-white"
+                      title={isEn ? 'Search in room' : 'Поиск в комнате'}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+                        <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = encodeURIComponent(selectedRoom.name);
+                        router.push(`/group-call?roomId=${selectedRoom.id}&roomName=${name}&video=false`);
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-500 transition-all hover:bg-white hover:text-slate-800 dark:border-white/10 dark:bg-white/8 dark:text-slate-400 dark:hover:bg-white/14 dark:hover:text-white"
+                      title={isEn ? 'Room voice call' : 'Голосовой звонок в комнате'}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+                        <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
                 {selected && !selectedRoom && (
                   <div className="flex shrink-0 items-center gap-2">
+                    <div
+                      className={`hidden sm:flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        currentChatE2E
+                          ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                          : 'bg-slate-200/50 text-slate-400 dark:bg-slate-700/50'
+                      }`}
+                      title={
+                        currentChatE2E
+                          ? isEn
+                            ? 'End-to-End encryption active'
+                            : 'End-to-End шифрование активно'
+                          : isEn
+                            ? 'E2E unavailable (peer has no keys)'
+                            : 'E2E недоступен (собеседник не настроил ключи)'
+                      }
+                    >
+                      {currentChatE2E ? '🔐 E2E' : isEn ? '🔒 Encrypted' : '🔒 Зашифровано'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMsgSearchOpen((v) => !v);
+                        setMsgSearchQuery('');
+                        setMsgSearchResults([]);
+                        setTimeout(() => msgSearchInputRef.current?.focus(), 50);
+                      }}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-500 transition-all hover:bg-white hover:text-slate-800 dark:border-white/10 dark:bg-white/8 dark:text-slate-400 dark:hover:bg-white/14 dark:hover:text-white"
+                      title={isEn ? 'Search messages' : 'Поиск по сообщениям'}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+                      </svg>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1439,6 +1900,117 @@ function DashboardInner() {
                   </div>
                 )}
               </div>
+
+              {roomSearchOpen && isRoomChat && selectedRoom && (
+                <div className="shrink-0 border-b border-slate-200/60 bg-white/60 px-4 py-2 backdrop-blur dark:border-slate-700/50 dark:bg-slate-900/60">
+                  <div className="relative">
+                    <input
+                      ref={roomSearchInputRef}
+                      type="text"
+                      value={roomSearchQuery}
+                      onChange={(e) => onRoomSearchChange(e.target.value)}
+                      placeholder={isEn ? 'Search in room…' : 'Поиск в комнате…'}
+                      className="w-full rounded-xl border border-slate-200/80 bg-white/80 py-1.5 pl-8 pr-4 text-sm outline-none placeholder-slate-400 focus:ring-1 focus:ring-indigo-400 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:placeholder-slate-500"
+                    />
+                    <svg className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                      <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  {roomSearchLoading && (
+                    <p className="mt-2 text-xs text-slate-400">{isEn ? 'Searching…' : 'Поиск…'}</p>
+                  )}
+                  {roomSearchEncrypted && (
+                    <p className="mt-2 text-xs text-amber-500">
+                      {isEn ? 'Search unavailable: messages are encrypted.' : 'Поиск недоступен: сообщения зашифрованы.'}
+                    </p>
+                  )}
+                  {!roomSearchLoading && !roomSearchEncrypted && roomSearchResults.length === 0 && roomSearchQuery.length >= 2 && (
+                    <p className="mt-2 text-xs text-slate-400">{isEn ? 'No results.' : 'Ничего не найдено.'}</p>
+                  )}
+                  {roomSearchResults.length > 0 && (
+                    <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
+                      {roomSearchResults.map((r) => (
+                        <div key={r.messageId} className="rounded-xl px-3 py-2">
+                          <div className="text-[11px] font-medium text-indigo-500 dark:text-indigo-400">
+                            {r.sender.name || r.sender.email}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-slate-700 dark:text-slate-300">{r.text}</div>
+                          <div className="mt-0.5 text-[10px] text-slate-400">
+                            {new Date(r.createdAt).toLocaleString(isEn ? 'en-US' : 'ru-RU', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {msgSearchOpen && selected && !selectedRoom && (
+                <div className="shrink-0 border-b border-slate-200/60 bg-white/60 px-4 py-2 backdrop-blur dark:border-slate-700/50 dark:bg-slate-900/60">
+                  <div className="relative">
+                    <input
+                      ref={msgSearchInputRef}
+                      type="text"
+                      value={msgSearchQuery}
+                      onChange={(e) => onMsgSearchChange(e.target.value)}
+                      placeholder={isEn ? 'Search messages…' : 'Поиск по сообщениям…'}
+                      className="w-full rounded-xl border border-slate-200/80 bg-white/80 py-1.5 pl-8 pr-4 text-sm outline-none placeholder-slate-400 focus:ring-1 focus:ring-indigo-400 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:placeholder-slate-500"
+                    />
+                    <svg className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  {msgSearchLoading && (
+                    <p className="mt-2 text-xs text-slate-400">{isEn ? 'Searching…' : 'Поиск…'}</p>
+                  )}
+                  {msgSearchEncrypted && (
+                    <p className="mt-2 text-xs text-amber-500">
+                      {isEn ? 'Search unavailable: messages are encrypted.' : 'Поиск недоступен: сообщения зашифрованы.'}
+                    </p>
+                  )}
+                  {!msgSearchLoading && !msgSearchEncrypted && msgSearchResults.length === 0 && msgSearchQuery.length >= 2 && (
+                    <p className="mt-2 text-xs text-slate-400">{isEn ? 'No results.' : 'Ничего не найдено.'}</p>
+                  )}
+                  {msgSearchResults.length > 0 && (
+                    <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                      {msgSearchResults.map((r) => (
+                        <button
+                          key={r.messageId}
+                          type="button"
+                          onClick={() => {
+                            const conn = connections.find((c) => c.user.id === r.peerId);
+                            if (conn) {
+                              setSelected(conn);
+                              setMsgSearchOpen(false);
+                              setMsgSearchQuery('');
+                              setMsgSearchResults([]);
+                            }
+                          }}
+                          className="w-full rounded-xl px-3 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                        >
+                          <div className="text-[11px] font-medium text-indigo-500 dark:text-indigo-400">
+                            {r.peerName || r.peerEmail}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-slate-700 dark:text-slate-300">{r.text}</div>
+                          <div className="mt-0.5 text-[10px] text-slate-400">
+                            {new Date(r.createdAt).toLocaleString(isEn ? 'en-US' : 'ru-RU', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div
                 ref={chatRef}
@@ -1533,35 +2105,144 @@ function DashboardInner() {
                                     </div>
                                   )
                                 )}
-                                <div className={`${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} w-fit rounded-2xl px-3 py-1.5 shadow-sm sm:px-4 sm:py-2 ${
-                                  isMine
-                                    ? 'bg-indigo-500 text-white dark:bg-indigo-600'
-                                    : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
-                                }`}>
-                                  {!isMine && !isPrevSameSender && senderName && (
-                                    <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">{senderName}</div>
-                                  )}
-                                  {rm.attachmentUrl && (
-                                    <div className="space-y-2">
-                                      <div className={`text-[11px] font-medium ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                                        {isMediaType(rm.attachmentType) ? (isEn ? 'Photo/video' : 'Фото/видео') : (isEn ? 'File' : 'Файл')}
-                                      </div>
-                                      {renderAttachmentContent(rm)}
-                                      {rm.attachmentName && (
-                                        <div className={`break-all text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                                          {decodeAttachmentName(rm.attachmentName)}
+                                <div
+                                  className={`group relative ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} flex flex-col items-start gap-2`}
+                                >
+                                  <div className="flex w-full items-start gap-2">
+                                    <div
+                                      className={`w-fit rounded-2xl px-3 py-1.5 shadow-sm sm:px-4 sm:py-2 ${
+                                        isMine
+                                          ? 'bg-indigo-500 text-white dark:bg-indigo-600'
+                                          : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
+                                      }`}
+                                      onPointerDown={onMessagePointerDown(m.id)}
+                                      onPointerUp={onMessagePointerUp}
+                                      onPointerCancel={cancelLongPress}
+                                      onPointerMove={cancelLongPress}
+                                    >
+                                      {!isMine && !isPrevSameSender && senderName && (
+                                        <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">{senderName}</div>
+                                      )}
+                                      {rm.replyTo && (
+                                        <QuoteBubble
+                                          replyTo={rm.replyTo}
+                                          isMine={isMine}
+                                          allMessages={roomMessages}
+                                          isEn={isEn}
+                                        />
+                                      )}
+                                      {rm.attachmentUrl && (
+                                        <div className="space-y-2">
+                                          <div className={`text-[11px] font-medium ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                            {isMediaType(rm.attachmentType) ? (isEn ? 'Photo/video' : 'Фото/видео') : (isEn ? 'File' : 'Файл')}
+                                          </div>
+                                          {renderAttachmentContent(rm)}
+                                          {rm.attachmentName && (
+                                            <div className={`break-all text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                              {decodeAttachmentName(rm.attachmentName)}
+                                            </div>
+                                          )}
                                         </div>
                                       )}
+                                      {m.text && (
+                                        <div className={`text-xs leading-[1.45] break-words sm:text-sm ${rm.attachmentUrl ? 'mt-2' : ''}`}>
+                                          {editingMessageId === m.id && selectedRoom ? (
+                                            <div className="flex flex-col gap-1.5">
+                                              <textarea
+                                                ref={editInputRef}
+                                                value={editingText}
+                                                onChange={(e) => setEditingText(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    void submitEditRoom(selectedRoom.id, m.id);
+                                                  }
+                                                  if (e.key === 'Escape') cancelEdit();
+                                                }}
+                                                className="w-full min-w-[180px] resize-none rounded-xl bg-white/20 px-2 py-1 text-xs text-white placeholder-white/50 outline-none ring-1 ring-white/40 focus:ring-white/70 sm:text-sm"
+                                                rows={2}
+                                              />
+                                              <div className="flex justify-end gap-1.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={cancelEdit}
+                                                  className="rounded-lg px-2 py-0.5 text-[11px] text-white/70 hover:text-white"
+                                                >
+                                                  {isEn ? 'Cancel' : 'Отмена'}
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void submitEditRoom(selectedRoom.id, m.id)}
+                                                  className="rounded-lg bg-white/20 px-2 py-0.5 text-[11px] text-white hover:bg-white/30"
+                                                >
+                                                  {isEn ? 'Save' : 'Сохранить'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <>
+                                              {m.text}
+                                              {rm.editedAt && (
+                                                <span className="ml-1.5 text-[10px] opacity-60">
+                                                  {isEn ? '(edited)' : '(изм.)'}
+                                                </span>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                      )}
+                                      <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                        <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                        {isMine && <MessageStatus status="sent" className="text-white/80" />}
+                                      </div>
                                     </div>
-                                  )}
-                                  {m.text && (
-                                    <div className={`text-xs leading-[1.45] break-words sm:text-sm ${rm.attachmentUrl ? 'mt-2' : ''}`}>
-                                      {m.text}
-                                    </div>
-                                  )}
-                                  <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                                    <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                    {isMine && <MessageStatus status="sent" className="text-white/80" />}
+
+                                    {isMine && !isSystemLeave && (
+                                      <div className="relative hidden shrink-0 items-start md:flex" data-desktop-msg-menu="1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setDesktopMenuMessageId((prev) => (prev === m.id ? null : m.id));
+                                          }}
+                                          className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/5 text-[14px] leading-none text-slate-600 opacity-0 pointer-events-none transition group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-slate-900/10 hover:text-slate-900 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/15"
+                                          aria-label={isEn ? 'Message actions' : 'Действия'}
+                                        >
+                                          ⋯
+                                        </button>
+
+                                        {desktopMenuMessageId === m.id && (
+                                          <div className="absolute bottom-full right-0 z-20 mb-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white/95 text-xs text-slate-900 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100">
+                                            <button
+                                              type="button"
+                                              onClick={() => startReply(m)}
+                                              className="w-full px-3 py-2.5 text-left font-medium transition hover:bg-slate-900/5 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white"
+                                            >
+                                              {isEn ? '↩ Reply' : '↩ Ответить'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setEditingMessageId(m.id);
+                                                setEditingText(m.text);
+                                                closeDesktopMenu();
+                                                setTimeout(() => editInputRef.current?.focus(), 50);
+                                              }}
+                                              className="w-full px-3 py-2.5 text-left font-medium transition hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:bg-indigo-500/15 dark:hover:text-indigo-200"
+                                            >
+                                              {isEn ? 'Edit message' : 'Редактировать'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={closeDesktopMenu}
+                                              className="w-full px-3 py-2.5 text-left text-slate-600 transition hover:bg-slate-900/5 dark:text-slate-300 dark:hover:bg-white/10"
+                                            >
+                                              {isEn ? 'Cancel' : 'Отмена'}
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                                 {isMine && (
@@ -1622,23 +2303,32 @@ function DashboardInner() {
                                 )
                               )}
                               <div
-                                className={`group ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} flex items-start gap-2`}
+                                className={`group relative ${isMine ? 'ml-auto max-w-[80%]' : 'max-w-[80%]'} flex flex-col items-start gap-2`}
                               >
+                                <div className="flex items-start gap-2 w-full">
                                 <div
                                   className={`relative w-fit rounded-2xl px-3 py-1.5 shadow-sm sm:px-4 sm:py-2 ${
                                     isMine
                                       ? 'bg-indigo-500 text-white dark:bg-indigo-600'
                                       : 'bg-slate-100 text-slate-900 dark:bg-slate-700/90 dark:text-slate-100'
                                   }`}
-                                  onPointerDown={isMine ? onMessagePointerDown(m.id) : undefined}
-                                  onPointerUp={isMine ? onMessagePointerUp : undefined}
-                                  onPointerCancel={isMine ? cancelLongPress : undefined}
-                                  onPointerMove={isMine ? cancelLongPress : undefined}
+                                  onPointerDown={onMessagePointerDown(m.id)}
+                                  onPointerUp={onMessagePointerUp}
+                                  onPointerCancel={cancelLongPress}
+                                  onPointerMove={cancelLongPress}
                                 >
                                 {!isMine && !isPrevSameSender && senderName && (
                                   <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                                     {senderName}
                                   </div>
+                                )}
+                                {(m as Message).replyTo && (
+                                  <QuoteBubble
+                                    replyTo={(m as Message).replyTo!}
+                                    isMine={isMine}
+                                    allMessages={messages}
+                                    isEn={isEn}
+                                  />
                                 )}
                                 {(m as Message).attachmentUrl && (
                                   <div className="space-y-2">
@@ -1655,7 +2345,49 @@ function DashboardInner() {
                                 )}
                                 {m.text && (
                                   <div className={`text-xs leading-[1.45] break-words sm:text-sm ${(m as Message).attachmentUrl ? 'mt-2' : ''}`}>
-                                    {m.text}
+                                    {editingMessageId === m.id ? (
+                                      <div className="flex flex-col gap-1.5">
+                                        <textarea
+                                          ref={editInputRef}
+                                          value={editingText}
+                                          onChange={(e) => setEditingText(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                              e.preventDefault();
+                                              void submitEdit(m.id);
+                                            }
+                                            if (e.key === 'Escape') cancelEdit();
+                                          }}
+                                          className="w-full min-w-[180px] resize-none rounded-xl bg-white/20 px-2 py-1 text-xs text-white placeholder-white/50 outline-none ring-1 ring-white/40 focus:ring-white/70 sm:text-sm"
+                                          rows={2}
+                                        />
+                                        <div className="flex gap-1.5 justify-end">
+                                          <button
+                                            type="button"
+                                            onClick={cancelEdit}
+                                            className="rounded-lg px-2 py-0.5 text-[11px] text-white/70 hover:text-white"
+                                          >
+                                            {isEn ? 'Cancel' : 'Отмена'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void submitEdit(m.id)}
+                                            className="rounded-lg bg-white/20 px-2 py-0.5 text-[11px] text-white hover:bg-white/30"
+                                          >
+                                            {isEn ? 'Save' : 'Сохранить'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {messageDisplayText(m as Message)}
+                                        {(m as Message).editedAt && (
+                                          <span className="ml-1.5 text-[10px] opacity-60">
+                                            {isEn ? '(edited)' : '(изм.)'}
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
                                   </div>
                                 )}
                                 <div className={`mt-1 flex items-center gap-2 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
@@ -1688,6 +2420,20 @@ function DashboardInner() {
                                       <div className="absolute right-0 bottom-full mb-2 z-20 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white/95 text-xs text-slate-900 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100">
                                         <button
                                           type="button"
+                                          onClick={() => startReply(m)}
+                                          className="w-full px-3 py-2.5 text-left font-medium transition hover:bg-slate-900/5 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white"
+                                        >
+                                          {isEn ? '↩ Reply' : '↩ Ответить'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => startEditMessage(m as Message)}
+                                          className="w-full px-3 py-2.5 text-left font-medium transition hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:bg-indigo-500/15 dark:hover:text-indigo-200"
+                                        >
+                                          {isEn ? 'Edit message' : 'Редактировать'}
+                                        </button>
+                                        <button
+                                          type="button"
                                           disabled={deletingMessageId === m.id}
                                           onClick={async () => {
                                             closeDesktopMenu();
@@ -1708,6 +2454,57 @@ function DashboardInner() {
                                     )}
                                   </div>
                                 )}
+                                </div>
+
+                                {(reactionsMap[m.id]?.length ?? 0) > 0 && (
+                                  <div className={`mt-1 flex flex-wrap gap-1 w-full ${isMine ? 'justify-end' : 'justify-start'}`}>
+                                    {reactionsMap[m.id]!.map((r) => (
+                                      <button
+                                        key={r.emoji}
+                                        type="button"
+                                        onClick={() => void toggleReaction(m.id, r.emoji)}
+                                        className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] transition ${
+                                          r.userReacted
+                                            ? 'border-indigo-400/50 bg-indigo-500/20 text-indigo-300'
+                                            : 'border-slate-300/30 bg-slate-100/10 text-slate-500 hover:bg-slate-100/20 dark:border-slate-600/40 dark:text-slate-400'
+                                        }`}
+                                      >
+                                        <span>{r.emoji}</span>
+                                        {r.count > 1 && <span className="font-medium">{r.count}</span>}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <div className={`mt-0.5 relative ${isMine ? 'text-right self-end' : 'text-left'}`} data-emoji-picker="1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEmojiPickerMessageId((prev) => (prev === m.id ? null : m.id))}
+                                    title={isEn ? 'Add reaction' : 'Добавить реакцию'}
+                                    className="hidden group-hover:inline-flex items-center justify-center h-5 w-5 rounded-full text-[12px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                  >
+                                    😊
+                                  </button>
+                                  {emojiPickerMessageId === m.id && (
+                                    <div
+                                      className={`absolute z-30 ${isMine ? 'right-0' : 'left-0'} bottom-full mb-1 flex gap-1 rounded-2xl border border-slate-200 bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95`}
+                                    >
+                                      {['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'].map((emoji) => (
+                                        <button
+                                          key={emoji}
+                                          type="button"
+                                          onClick={async () => {
+                                            setEmojiPickerMessageId(null);
+                                            await toggleReaction(m.id, emoji);
+                                          }}
+                                          className="rounded-lg p-1 text-lg transition hover:bg-slate-100 dark:hover:bg-slate-700"
+                                        >
+                                          {emoji}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                               {isMine && (
                                 isNextSameSender ? (
@@ -1747,6 +2544,30 @@ function DashboardInner() {
                 }}
               >
                 <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3">
+                  {replyTo && (
+                    <div className="flex items-start justify-between gap-3 rounded-[20px] border-l-4 border-indigo-400 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100">
+                      <div className="min-w-0">
+                        <div className="mb-0.5 text-[11px] font-semibold text-indigo-500">
+                          {isEn
+                            ? `Replying to ${replyTo.senderName || 'message'}`
+                            : `Ответ на сообщение${replyTo.senderName ? ` от ${replyTo.senderName}` : ''}`}
+                        </div>
+                        <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                          {replyTo.text || (replyTo.attachmentName ? `📎 ${replyTo.attachmentName}` : '…')}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={cancelReply}
+                        className="shrink-0 rounded-full bg-slate-900/6 p-1 text-slate-500 transition hover:bg-slate-900/10 hover:text-slate-800 dark:bg-white/[0.06] dark:hover:bg-white/[0.1] dark:hover:text-white"
+                        aria-label={isEn ? 'Cancel reply' : 'Отменить ответ'}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                          <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                   {attachment && (
                     <div className="flex items-center justify-between gap-3 rounded-[20px] bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_12px_24px_-20px_rgba(148,163,184,0.32)] dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_14px_28px_-22px_rgba(0,0,0,0.72)]">
                       <div className="flex min-w-0 items-center gap-3">
@@ -1820,6 +2641,7 @@ function DashboardInner() {
                     </div>
 
                     <input
+                      ref={textInputRef}
                       className="min-w-0 flex-1 bg-transparent text-xs placeholder:text-slate-500 outline-none sm:text-sm"
                       style={{ fontSize: '16px' }}
                       autoComplete="off"
@@ -1945,16 +2767,31 @@ function DashboardInner() {
             <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-200 dark:bg-slate-800" />
             <button
               type="button"
-              disabled={deletingMessageId === deleteActionMessageId}
-              onClick={async () => {
-                const id = deleteActionMessageId;
+              onClick={() => {
+                const msg = chatMessages.find((m) => m.id === deleteActionMessageId);
+                if (msg) startReply(msg);
                 closeDeleteActions();
-                if (id) await deleteDirectMessage(id);
               }}
-              className="w-full rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition disabled:opacity-60"
+              className="w-full rounded-2xl bg-slate-100 px-4 py-3.5 text-left text-sm font-medium text-slate-900 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
             >
-              {isEn ? 'Delete for everyone' : 'Удалить сообщение у всех'}
+              {isEn ? '↩ Reply' : '↩ Ответить'}
             </button>
+            {!isRoomChat &&
+              deleteActionMessageId &&
+              chatMessages.find((m) => m.id === deleteActionMessageId)?.senderId === user?.id && (
+                <button
+                  type="button"
+                  disabled={deletingMessageId === deleteActionMessageId}
+                  onClick={async () => {
+                    const id = deleteActionMessageId;
+                    closeDeleteActions();
+                    if (id) await deleteDirectMessage(id);
+                  }}
+                  className="mt-3 w-full rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition disabled:opacity-60"
+                >
+                  {isEn ? 'Delete for everyone' : 'Удалить сообщение у всех'}
+                </button>
+              )}
             <button
               type="button"
               onClick={closeDeleteActions}

@@ -35,8 +35,14 @@ export class TwoFactorService {
     });
 
     const qrCode = secret.otpauth_url ? await QRCode.toDataURL(secret.otpauth_url) : '';
-    const backupCodes = Array.from({ length: 10 }, () => randomBytes(4).toString('hex').toUpperCase());
-    const hashed = backupCodes.map((c) => createHash('sha256').update(c).digest('hex'));
+    const backupCodes = Array.from({ length: 10 }, () => {
+      const raw = randomBytes(10).toString('hex').toUpperCase();
+      return `${raw.slice(0, 5)}-${raw.slice(5, 10)}-${raw.slice(10, 15)}-${raw.slice(15, 20)}`;
+    });
+    const hashed = backupCodes.map((c) => {
+      const normalized = c.replace(/-/g, '');
+      return createHash('sha256').update(normalized, 'utf8').digest('hex');
+    });
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -78,6 +84,36 @@ export class TwoFactorService {
       token: String(token).replace(/\D/g, '').slice(0, 6),
       window: Number(process.env.TOTP_WINDOW) || 1,
     });
+  }
+
+  async verifyAndConsumeBackupCode(userId: string, rawCode: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { backupCodes: true },
+    });
+    if (!user || !user.backupCodes.length) return false;
+
+    const normalized = rawCode.replace(/[-\s]/g, '').toUpperCase();
+    const codeHash = createHash('sha256').update(normalized, 'utf8').digest('hex');
+
+    const index = user.backupCodes.indexOf(codeHash);
+    if (index === -1) return false;
+
+    const updatedCodes = [...user.backupCodes];
+    updatedCodes.splice(index, 1);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { backupCodes: updatedCodes },
+    });
+
+    await this.audit.log({
+      userId,
+      action: '2FA_BACKUP_CODE_USED',
+      severity: 'HIGH',
+    });
+
+    return true;
   }
 
   async disableTotp(userId: string, token: string): Promise<boolean> {

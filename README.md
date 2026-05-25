@@ -4,7 +4,6 @@
 
 **Возможности:** регистрация с подтверждением email, логин, личный кабинет, приглашения по ссылке, чаты и комнаты.
 
----
 
 ## Email verification (подтверждение email)
 
@@ -75,3 +74,74 @@
    - Backend: http://localhost:3001  
 
 4. Регистрация: http://localhost:3000/auth/register → после ввода данных редирект на `/auth/verify-email?email=...`. Код из письма (или из логов бэкенда, если SMTP не настроен) ввести на странице подтверждения.
+
+---
+
+## WebRTC звонки и TURN-сервер
+
+Видео и голосовые звонки используют WebRTC P2P. Для установки соединения нужен STUN-сервер (Google STUN используется по умолчанию, бесплатно).
+
+**Проблема:** STUN не работает за Symmetric NAT — корпоративные сети, часть мобильных операторов. Для надёжных звонков нужен TURN-сервер.
+
+### Варианты настройки TURN
+
+**Вариант A — Бесплатный Open Relay (Metered.ca, до 500MB/мес):**
+
+```env
+NEXT_PUBLIC_TURN_URLS=turn:openrelay.metered.ca:80,turn:openrelay.metered.ca:443?transport=tcp,turns:openrelay.metered.ca:443?transport=tcp
+NEXT_PUBLIC_TURN_USERNAME=openrelayproject
+NEXT_PUBLIC_TURN_CREDENTIAL=openrelayproject
+```
+
+**Вариант B — Платный Metered.ca (рекомендуется для production):**
+
+Зарегистрируйтесь на https://www.metered.ca/, создайте приложение, получите credentials.
+
+**Вариант C — Свой coturn:**
+
+Установите [coturn](https://github.com/coturn/coturn), задайте те же три переменные в `frontend/.env.local`.
+
+**Вариант D — Полный JSON список ICE (несколько TURN серверов):**
+
+```env
+NEXT_PUBLIC_WEBRTC_ICE_SERVERS_JSON=[{"urls":["turn:your.host:3478"],"username":"u","credential":"p"}]
+```
+
+### Без TURN
+
+Без TURN звонки работают только между пользователями в одной сети или если хотя бы один из них имеет публичный IP. Приложение запустится, но часть звонков может не соединиться. В dev-консоли будет предупреждение.
+
+---
+
+## SFU для групповых звонков >6 участников (LiveKit)
+
+По умолчанию групповые звонки используют WebRTC Mesh (P2P) — хорошо до 6 участников.
+Для комнат с большим количеством участников нужен SFU (Selective Forwarding Unit).
+
+### Настройка LiveKit Cloud (рекомендуется)
+
+1. Зарегистрируйтесь на [livekit.io](https://livekit.io) → Create Project
+2. Скопируйте API Key, API Secret, WebSocket URL из Dashboard
+3. Добавьте в `backend/.env`:
+   ```
+   LIVEKIT_API_KEY=APIxxxxxxxxxxxxxxx
+   LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   LIVEKIT_URL=wss://your-project.livekit.cloud
+   ```
+
+### Поведение
+
+| Ситуация | Режим |
+|----------|-------|
+| LiveKit настроен | SFU (все групповые звонки через LiveKit) |
+| LiveKit не настроен | Mesh P2P (предупреждение при >6 уч.) |
+
+### Самостоятельный деплой LiveKit
+
+Если нужен self-hosted:
+```bash
+docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+  -e LIVEKIT_KEYS="devkey: secret" \
+  livekit/livekit-server --dev
+```
+Затем: `LIVEKIT_API_KEY=devkey`, `LIVEKIT_API_SECRET=secret`, `LIVEKIT_URL=ws://localhost:7880`

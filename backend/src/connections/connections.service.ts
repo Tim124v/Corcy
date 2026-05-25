@@ -18,18 +18,33 @@ export class ConnectionsService {
     private readonly audit: AuditLogService,
   ) {}
 
-  async listMy(userId: string) {
+  async listMy(userId: string, opts?: { cursor?: string; limit?: number }) {
+    const take = Math.min(opts?.limit ?? 50, 100);
+
     const connections = await this.prisma.connection.findMany({
-      where: { OR: [{ userIdA: userId }, { userIdB: userId }] },
+      where: {
+        OR: [{ userIdA: userId }, { userIdB: userId }],
+      },
       include: {
         userA: { select: { id: true, email: true, name: true, avatarUrl: true } },
         userB: { select: { id: true, email: true, name: true, avatarUrl: true } },
       },
+      orderBy: { createdAt: 'desc' },
+      take: take + 1,
+      ...(opts?.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     });
-    return connections.map((c: (typeof connections)[number]) => ({
+
+    const hasMore = connections.length > take;
+    if (hasMore) connections.pop();
+
+    const nextCursor = hasMore ? connections[connections.length - 1]?.id : undefined;
+
+    const items = connections.map((c: (typeof connections)[number]) => ({
       id: c.id,
       user: c.userIdA === userId ? c.userB : c.userA,
     }));
+
+    return { items, hasMore, nextCursor: nextCursor ?? null };
   }
 
   async removeConnection(userId: string, connectionId: string) {
@@ -304,14 +319,11 @@ export class ConnectionsService {
   }
 
   async listInvites(userId: string) {
-    const base = process.env.FRONTEND_URL || 'http://localhost:3000';
     const invites = await this.prisma.invite.findMany({
       where: { fromUserId: userId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
-        token: true,
-        tokenHash: true,
         toEmail: true,
         createdAt: true,
         expiresAt: true,
@@ -323,10 +335,7 @@ export class ConnectionsService {
       },
     });
     return invites.map((inv: (typeof invites)[number]) => {
-      const legacyLink =
-        inv.token.length === 48 && inv.tokenHash
-          ? `${base}/invite/${inv.token}`
-          : null;
+      const legacyLink: string | null = null;
       let status: 'active' | 'used' | 'expired' | 'revoked';
       if (!inv.isActive && !inv.usedAt) status = 'revoked';
       else if (inv.usedAt) status = 'used';
@@ -334,7 +343,6 @@ export class ConnectionsService {
       else status = 'active';
       return {
         id: inv.id,
-        token: inv.token,
         toEmail: inv.toEmail ?? null,
         createdAt: inv.createdAt,
         expiresAt: inv.expiresAt,
@@ -383,7 +391,7 @@ export class ConnectionsService {
 
     const invite = await this.prisma.invite.findFirst({
       where: {
-        AND: [{ OR: [{ tokenHash: h }, { token: rawToken }] }, { isActive: true }],
+        AND: [{ tokenHash: h }, { isActive: true }],
       },
       include: {
         fromUser: {
@@ -430,10 +438,7 @@ export class ConnectionsService {
     const h = InviteTokenUtil.hash(rawToken);
     const invite = await this.prisma.invite.findFirst({
       where: {
-        AND: [
-          { OR: [{ tokenHash: h }, { token: rawToken }] },
-          { isActive: true },
-        ],
+        AND: [{ tokenHash: h }, { isActive: true }],
       },
       include: { fromUser: { select: { id: true, email: true, name: true, avatarUrl: true } } },
     });

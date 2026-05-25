@@ -18,6 +18,7 @@ import rateLimit from 'express-rate-limit';
 import { securityHeadersMiddleware } from './security/http-security.middleware.js';
 import { cleanupExpiredRateLimits } from './auth/rate-limit.util.js';
 import { PrismaService } from './prisma/prisma.service.js';
+import { RoomsService } from './rooms/rooms.service.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -54,13 +55,13 @@ async function bootstrap() {
   }
   app.enableCors({
     origin: (origin, cb) => {
-      // origin может быть undefined (например, curl/Postman) — разрешаем
-      if (!origin) return cb(null, isDev);
+      // undefined = мобильное приложение, curl и т.п.
+      if (!origin) return cb(null, true);
       return cb(null, corsOrigins.has(origin));
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Client'],
   });
 
   app.use(json({ limit: '512kb' }));
@@ -101,6 +102,16 @@ async function bootstrap() {
   app.use('/auth/register', authLimiter);
   app.use('/auth/refresh', refreshLimiter);
   app.use('/auth/2fa/challenge', authLimiter);
+  app.use('/auth/2fa/backup', authLimiter);
+
+  const resendLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { ok: false, error: 'Too many attempts. Try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use('/auth/resend-verification', resendLimiter);
 
   const generalLimiter = rateLimit({
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
@@ -122,11 +133,23 @@ async function bootstrap() {
   // eslint-disable-next-line no-console
   console.log(`Backend listening on port ${port}`);
 
-  // Очистка устаревших rate limit записей каждые 6 часов
   const prisma = app.get(PrismaService);
+  const roomsService = app.get(RoomsService);
+
+  // Очистка устаревших rate limit записей каждые 6 часов
   setInterval(() => {
     cleanupExpiredRateLimits(prisma).catch(() => {});
   }, 6 * 60 * 60 * 1000);
+
+  // Очистка истёкших комнат каждый час
+  setInterval(() => {
+    roomsService.cleanupExpired().catch(() => {});
+  }, 60 * 60 * 1000);
+
+  // Первый запуск — сразу при старте сервера (через 30 сек чтобы не мешать инициализации)
+  setTimeout(() => {
+    roomsService.cleanupExpired().catch(() => {});
+  }, 30_000);
 }
 
 bootstrap();

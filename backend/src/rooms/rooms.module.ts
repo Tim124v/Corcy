@@ -5,10 +5,12 @@ import { RoomsController } from './rooms.controller.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { ChatModule } from '../chat/chat.module.js';
 import { PlanGuardService } from '../common/plan-guard.service.js';
+import { LiveKitService } from './livekit.service.js';
 
 @Module({
   imports: [PrismaModule, AuthModule, ChatModule],
   controllers: [RoomsController],
-  providers: [RoomsService, PlanGuardService],
+  providers: [RoomsService, PlanGuardService, LiveKitService],
+  exports: [RoomsService],
 })
 export class RoomsModule {}

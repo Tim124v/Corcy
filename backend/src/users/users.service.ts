@@ -176,5 +176,20 @@ export class UsersService {
     };
     return limits[plan as keyof typeof limits] ?? limits.FREE;
   }
+
+  async updateE2EPublicKey(userId: string, publicKey: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { e2ePublicKey: publicKey, e2eKeyUploadedAt: new Date() },
+    });
+  }
+
+  async getE2EPublicKey(userId: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { e2ePublicKey: true },
+    });
+    return user?.e2ePublicKey ?? null;
+  }
 }
 

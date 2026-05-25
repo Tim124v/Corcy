@@ -14,6 +14,7 @@ import { useNotificationsStore, type NotificationType } from '../../store/notifi
 import { SecureInput } from '../../components/ui/SecureInput';
 import { Button } from '../../components/ui/Button';
 import { usePushNotifications } from '../../hooks/use-push-notifications';
+import { useE2E } from '../../hooks/use-e2e';
 
 type UserProfile = {
   name: string | null;
@@ -35,6 +36,8 @@ export default function SettingsPage() {
   const setNotificationCategoryEnabled = useNotificationsStore((s) => s.setCategoryEnabled);
   const { permission: pushPermission, subscribed: pushSubscribed, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } =
     usePushNotifications();
+  const { isE2EReady, resetKeys } = useE2E(user?.id);
+  const e2eActive = isE2EReady();
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
@@ -265,6 +268,57 @@ export default function SettingsPage() {
               }}
               onSessionsClick={() => setIsSessionsModalOpen(true)}
             />
+
+            <div className="rounded-2xl border border-slate-200/60 bg-white/60 p-5 dark:border-slate-700/50 dark:bg-slate-900/60">
+              <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                🔐 {language === 'en' ? 'End-to-End encryption' : 'End-to-End шифрование'}
+              </h3>
+              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                {language === 'en'
+                  ? 'Messages are encrypted on your device. The server cannot read them. Keys are stored locally — losing keys means losing access to encrypted messages.'
+                  : 'Сообщения шифруются на вашем устройстве. Сервер не может их прочитать. Ключи хранятся локально — потеря ключей означает потерю доступа к зашифрованным сообщениям.'}
+              </p>
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm text-slate-700 dark:text-slate-300">
+                  {language === 'en' ? 'Status:' : 'Статус:'}{' '}
+                  <span
+                    className={
+                      e2eActive
+                        ? 'font-medium text-emerald-600 dark:text-emerald-400'
+                        : 'font-medium text-slate-500'
+                    }
+                  >
+                    {e2eActive
+                      ? language === 'en'
+                        ? 'Active'
+                        : 'Активно'
+                      : language === 'en'
+                        ? 'Not initialized (log in again)'
+                        : 'Не инициализировано (войдите снова)'}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pwd = window.prompt(
+                      language === 'en'
+                        ? 'Enter your password to reset E2E keys:'
+                        : 'Введите пароль для сброса E2E-ключей:',
+                    );
+                    if (!pwd) return;
+                    const ok = window.confirm(
+                      language === 'en'
+                        ? 'Generate new key pair? Old encrypted messages will become unreadable.'
+                        : 'Сгенерировать новую пару ключей? Старые зашифрованные сообщения станут нечитаемыми.',
+                    );
+                    if (ok) void resetKeys(pwd);
+                  }}
+                  className="shrink-0 rounded-xl border border-slate-300 px-3 py-1.5 text-xs text-slate-600 transition hover:border-slate-400 dark:border-slate-600 dark:text-slate-400"
+                >
+                  {language === 'en' ? 'Reset keys' : 'Сбросить ключи'}
+                </button>
+              </div>
+            </div>
 
             {/* 2FA Модал — Setup */}
             {twoFaStep === 'setup' && (

@@ -29,6 +29,16 @@ function buildIceServers(): RTCIceServer[] {
     if (urls.length) base.push({ urls, username: turnUser, credential: turnCred });
   }
 
+  const hasTurn = base.some(
+    (s) => (typeof s.urls === 'string' ? s.urls : s.urls[0])?.startsWith('turn'),
+  );
+  if (!hasTurn && process.env.NODE_ENV !== 'production') {
+    console.warn(
+      '[WebRTC] TURN-сервер не настроен. Звонки могут не работать за Symmetric NAT.\n' +
+        'Добавьте NEXT_PUBLIC_TURN_URLS, NEXT_PUBLIC_TURN_USERNAME, NEXT_PUBLIC_TURN_CREDENTIAL\n' +
+        'в frontend/.env.local. Подробнее: frontend/.env.example',
+    );
+  }
   return base;
 }
 
@@ -177,6 +187,48 @@ export function useWebRTC(handlers: CallHandlers) {
 
   const getLocalStream = useCallback(() => localStream.current, []);
 
+  const screenStream = useRef<MediaStream | null>(null);
+
+  const stopScreenShare = useCallback(async (): Promise<void> => {
+    screenStream.current?.getTracks().forEach((t) => t.stop());
+    screenStream.current = null;
+
+    const camTrack = localStream.current?.getVideoTracks()[0];
+    if (camTrack) {
+      const senders = pc.current?.getSenders() ?? [];
+      const videoSender = senders.find((s) => s.track?.kind === 'video');
+      if (videoSender) await videoSender.replaceTrack(camTrack);
+    }
+  }, []);
+
+  const startScreenShare = useCallback(async (): Promise<boolean> => {
+    try {
+      const stream = await (
+        navigator.mediaDevices as MediaDevices & {
+          getDisplayMedia: (c?: MediaStreamConstraints) => Promise<MediaStream>;
+        }
+      ).getDisplayMedia({ video: true, audio: false });
+
+      screenStream.current = stream;
+      const [screenTrack] = stream.getVideoTracks();
+      if (!screenTrack) return false;
+
+      const senders = pc.current?.getSenders() ?? [];
+      const videoSender = senders.find((s) => s.track?.kind === 'video');
+      if (videoSender) {
+        await videoSender.replaceTrack(screenTrack);
+      }
+
+      screenTrack.onended = () => {
+        void stopScreenShare();
+      };
+
+      return true;
+    } catch {
+      return false;
+    }
+  }, [stopScreenShare]);
+
   useEffect(() => {
     return () => {
       pc.current?.close();
@@ -193,5 +245,7 @@ export function useWebRTC(handlers: CallHandlers) {
     toggleMic,
     toggleCamera,
     getLocalStream,
+    startScreenShare,
+    stopScreenShare,
   };
 }

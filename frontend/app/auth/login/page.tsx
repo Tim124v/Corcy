@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api } from '../../../lib/api';
 import { sanitizeRedirect } from '../../../lib/sanitize-redirect';
 import { useAuthStore } from '../../../store/auth';
+import { initializeE2EKeys } from '../../../hooks/use-e2e';
 import { SecureInput } from '../../../components/ui/SecureInput';
 import { Button } from '../../../components/ui/Button';
 
@@ -51,6 +52,7 @@ function LoginPageInner() {
         return;
       }
       setAuth(res.user, res.accessToken);
+      void initializeE2EKeys(res.user.id, password);
       const raw = typeof window !== 'undefined' ? sessionStorage.getItem('auth_redirect') : null;
       const redirect = sanitizeRedirect(raw);
       if (raw) sessionStorage.removeItem('auth_redirect');
@@ -81,6 +83,7 @@ function LoginPageInner() {
         return;
       }
       setAuth(res.user, res.accessToken);
+      void initializeE2EKeys(res.user.id, password);
       const raw = typeof window !== 'undefined' ? sessionStorage.getItem('auth_redirect') : null;
       const redirect = sanitizeRedirect(raw);
       if (raw) sessionStorage.removeItem('auth_redirect');

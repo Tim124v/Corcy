@@ -19,8 +19,19 @@ export class ConnectionsController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  async list(@ReqUser() user: { id: string }) {
-    return this.connections.listMy(user.id);
+  async list(
+    @ReqUser() user: { id: string },
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedLimit = limit ? Math.min(parseInt(limit, 10) || 50, 100) : undefined;
+    const result = await this.connections.listMy(user.id, { cursor, limit: parsedLimit });
+
+    if (!cursor && !limit) {
+      return result.items;
+    }
+
+    return result;
   }
 
   @Get('invites')

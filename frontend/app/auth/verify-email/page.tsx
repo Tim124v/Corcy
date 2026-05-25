@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api } from '../../../lib/api';
 import { sanitizeRedirect } from '../../../lib/sanitize-redirect';
 import { useAuthStore } from '../../../store/auth';
+import { initializeE2EKeys } from '../../../hooks/use-e2e';
 import { Button } from '../../../components/ui/Button';
 
 function VerifyEmailPageInner() {
@@ -51,6 +52,13 @@ function VerifyEmailPageInner() {
       }
       if (res.user && res.accessToken) {
         setAuth(res.user, res.accessToken);
+        if (typeof window !== 'undefined') {
+          const pendingPassword = sessionStorage.getItem('connexy-e2e-pending-password');
+          if (pendingPassword) {
+            void initializeE2EKeys(res.user.id, pendingPassword);
+            sessionStorage.removeItem('connexy-e2e-pending-password');
+          }
+        }
         const raw = typeof window !== 'undefined' ? sessionStorage.getItem('auth_redirect') : null;
         const redirectTo = sanitizeRedirect(raw) || '/dashboard';
         if (raw) sessionStorage.removeItem('auth_redirect');
