@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useNotificationsStore } from './notifications';
 import { useChatActivityStore } from './chat-activity';
+import { clearE2ESession } from '../hooks/use-e2e';
 
 export type User = {
   id: string;
@@ -55,6 +56,7 @@ export const useAuthStore = create<AuthState>()(
         set({ accessToken });
       },
       logout: () => {
+        clearE2ESession();
         if (typeof window !== 'undefined') {
           const t = _accessToken;
           const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';

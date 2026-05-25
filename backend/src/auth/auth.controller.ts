@@ -43,6 +43,10 @@ function clientMeta(req: Request): { ipAddress?: string; userAgent?: string } {
   return { ipAddress: ip, userAgent: ua };
 }
 
+function isMobileClient(req: Request): boolean {
+  return req.headers['x-client'] === 'mobile';
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -77,7 +81,7 @@ export class AuthController {
 
     const invite = await this.prisma.invite.findFirst({
       where: {
-        AND: [{ OR: [{ tokenHash }, { token }] }, { isActive: true }],
+        AND: [{ tokenHash }, { isActive: true }],
       },
       include: {
         fromUser: {
@@ -111,12 +115,15 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Body(new ZodValidationPipe(VerifyEmailSchema)) body: VerifyEmailDto,
   ) {
-    return this.auth.verifyEmail(body.email, body.code, clientMeta(req), res);
+    return this.auth.verifyEmail(body.email, body.code, clientMeta(req), res, isMobileClient(req));
   }
 
   @Post('resend-verification')
-  async resendVerification(@Body(new ZodValidationPipe(ResendVerificationSchema)) body: ResendVerificationDto) {
-    return this.auth.resendVerification(body.email);
+  async resendVerification(
+    @Req() req: Request,
+    @Body(new ZodValidationPipe(ResendVerificationSchema)) body: ResendVerificationDto,
+  ) {
+    return this.auth.resendVerification(body.email, clientMeta(req));
   }
 
   @Post('login')
@@ -125,7 +132,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Body(new ZodValidationPipe(LoginSchema)) body: LoginDto,
   ) {
-    return this.auth.login(body.email, body.password, clientMeta(req), res);
+    return this.auth.login(body.email, body.password, clientMeta(req), res, isMobileClient(req));
   }
 
   @Post('2fa/challenge')
@@ -157,7 +164,46 @@ export class AuthController {
       ...clientMeta(req),
       severity: 'LOW',
     });
-    return this.auth.issueFullTokens(payload.sub, clientMeta(req), res);
+    return this.auth.issueFullTokens(payload.sub, clientMeta(req), res, isMobileClient(req));
+  }
+
+  @Post('2fa/backup')
+  @HttpCode(200)
+  async twoFactorBackup(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: { tempToken?: string; backupCode?: string },
+  ) {
+    if (!body?.tempToken || !body?.backupCode) {
+      throw new UnauthorizedException('tempToken и backupCode обязательны');
+    }
+
+    let payload: TempTokenPayload;
+    try {
+      payload = TempToken.verify(body.tempToken);
+    } catch {
+      throw new UnauthorizedException('Временный токен недействителен или истёк');
+    }
+
+    const valid = await this.twoFactor.verifyAndConsumeBackupCode(payload.sub, body.backupCode);
+    if (!valid) {
+      await this.audit.log({
+        userId: payload.sub,
+        action: '2FA_BACKUP_FAILED',
+        ...clientMeta(req),
+        severity: 'HIGH',
+      });
+      throw new UnauthorizedException('Неверный или уже использованный backup код');
+    }
+
+    await this.audit.log({
+      userId: payload.sub,
+      action: 'LOGIN_2FA_BACKUP_SUCCESS',
+      ...clientMeta(req),
+      severity: 'MEDIUM',
+    });
+
+    return this.auth.issueFullTokens(payload.sub, clientMeta(req), res, isMobileClient(req));
   }
 
   @Post('refresh')
@@ -175,9 +221,10 @@ export class AuthController {
           ? fromBody
           : undefined;
     if (!raw) return { ok: false, error: 'Refresh token is required' };
+
+    const mobile = isMobileClient(req);
+
     try {
-      // Чтобы вернуть user при refresh, достаём userId по текущему refresh токену
-      // (перед ротацией, т.к. rotate удаляет старый токен).
       const tokenHash = createHash('sha256').update(raw).digest('hex');
       const stored = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
       const user = stored
@@ -188,9 +235,18 @@ export class AuthController {
         : null;
 
       const pair = await this.tokens.rotate(raw, clientMeta(req));
-      setRefreshCookie(res, pair.refreshToken);
+
+      if (!mobile) {
+        setRefreshCookie(res, pair.refreshToken);
+      }
+
       if (!user) return { ok: false, error: 'User not found' };
-      return { ok: true, accessToken: pair.accessToken, user };
+      return {
+        ok: true,
+        accessToken: pair.accessToken,
+        user,
+        ...(mobile ? { refreshToken: pair.refreshToken } : {}),
+      };
     } catch {
       return { ok: false, error: 'Invalid or expired refresh token' };
     }

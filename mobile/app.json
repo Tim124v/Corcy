@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Connexy",
+    "slug": "connexy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#020617"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.connexy.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#020617"
+      },
+      "package": "app.connexy.mobile"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#6366f1"
+        }
+      ]
+    ],
+    "scheme": "connexy",
+    "extra": {
+      "apiUrl": "http://localhost:3001"
+    }
+  }
+}

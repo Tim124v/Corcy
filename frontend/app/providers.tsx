@@ -1,15 +1,48 @@
 'use client';
 
 import type React from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../store/auth';
+import { useIncomingCallStore } from '../store/incoming-call';
+import { useGroupCallNotifStore } from '../store/group-call-notification';
+import { getSocket } from '../store/socket';
 import { ThemeProvider } from '../components/theme-provider';
 import { LanguageProvider } from '../components/language-provider';
 import { AppLayout } from '../components/layout/AppLayout';
 import { SocketProvider } from '../components/socket-provider';
 import { PwaRegister } from '../components/pwa-register';
+import { IncomingCallToast } from '../components/IncomingCallToast';
+import { GroupCallToast } from '../components/GroupCallToast';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const incomingCall = useIncomingCallStore((s) => s.call);
+  const clearIncomingCall = useIncomingCallStore((s) => s.setCall);
+  const groupCallNotif = useGroupCallNotifStore((s) => s.notification);
+  const clearGroupCallNotif = useGroupCallNotifStore((s) => s.setNotification);
+
+  const handleAcceptCall = useCallback(() => {
+    if (!incomingCall) return;
+    const encodedOffer = encodeURIComponent(JSON.stringify(incomingCall.offer));
+    clearIncomingCall(null);
+    router.push(
+      `/calls?peerId=${incomingCall.fromUserId}&peerName=${encodeURIComponent(incomingCall.fromName)}&incoming=true&offer=${encodedOffer}&video=${incomingCall.isVideo ? 'true' : 'false'}`,
+    );
+  }, [incomingCall, clearIncomingCall, router]);
+
+  const handleRejectCall = useCallback(() => {
+    if (!incomingCall) return;
+    getSocket()?.emit('call:reject', { toUserId: incomingCall.fromUserId });
+    clearIncomingCall(null);
+  }, [incomingCall, clearIncomingCall]);
+
+  const handleJoinGroupCall = useCallback(() => {
+    if (!groupCallNotif) return;
+    const name = encodeURIComponent(groupCallNotif.roomName);
+    clearGroupCallNotif(null);
+    router.push(`/group-call?roomId=${groupCallNotif.roomId}&roomName=${name}&video=false`);
+  }, [groupCallNotif, clearGroupCallNotif, router]);
   const tryRestoreSession = useAuthStore((s) => s.tryRestoreSession);
   const hydrated = useAuthStore((s) => s.hydrated);
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
@@ -57,6 +90,23 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <LanguageProvider>
         <PwaRegister />
         <SocketProvider />
+        {incomingCall && (
+          <IncomingCallToast
+            fromName={incomingCall.fromName}
+            isVideo={incomingCall.isVideo}
+            onAccept={handleAcceptCall}
+            onReject={handleRejectCall}
+          />
+        )}
+        {!incomingCall && groupCallNotif && (
+          <GroupCallToast
+            roomName={groupCallNotif.roomName}
+            roomId={groupCallNotif.roomId}
+            callerName={groupCallNotif.callerName}
+            onJoin={handleJoinGroupCall}
+            onDismiss={() => clearGroupCallNotif(null)}
+          />
+        )}
         <AppLayout>{children}</AppLayout>
       </LanguageProvider>
     </ThemeProvider>

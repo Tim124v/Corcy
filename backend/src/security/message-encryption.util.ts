@@ -3,11 +3,13 @@ import { decryptWithVersion, encryptString, looksEncryptedJson } from './encrypt
 
 export function prepareMessageForStorage(text: string): string {
   if (!text || text.trim() === '') return text;
+  if (text.startsWith('e2e:')) return text;
   return encryptString(text);
 }
 
 export function prepareMessageForApi(stored: string): string {
   if (!stored) return stored;
+  if (stored.startsWith('e2e:')) return stored;
   if (looksEncryptedJson(stored)) {
     try {
       const payload = JSON.parse(stored) as EncryptedPayload;

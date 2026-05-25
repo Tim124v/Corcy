@@ -105,6 +105,9 @@ function RegisterPageInner() {
         return;
       }
       if (res.needVerification && res.email) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('connexy-e2e-pending-password', password);
+        }
         router.replace(`/auth/verify-email?email=${encodeURIComponent(res.email)}`);
         return;
       }

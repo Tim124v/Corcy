@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
   Patch,
   Post,
   UploadedFile,
@@ -110,5 +111,24 @@ export class UsersController {
     const key = process.env.VAPID_PUBLIC_KEY;
     if (!key) return { key: null };
     return { key };
+  }
+
+  @Post('me/e2e-key')
+  async uploadE2EKey(@ReqUser() user: { id: string }, @Body() body: { publicKey?: string }) {
+    if (!body?.publicKey || typeof body.publicKey !== 'string') {
+      throw new BadRequestException('publicKey required');
+    }
+    const decoded = Buffer.from(body.publicKey, 'base64');
+    if (decoded.length !== 32) {
+      throw new BadRequestException('Неверный формат публичного ключа (ожидается 32 байта X25519)');
+    }
+    await this.users.updateE2EPublicKey(user.id, body.publicKey);
+    return { ok: true };
+  }
+
+  @Get(':userId/e2e-key')
+  async getE2EKey(@Param('userId') userId: string) {
+    const key = await this.users.getE2EPublicKey(userId);
+    return { publicKey: key ?? null };
   }
 }

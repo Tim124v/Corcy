@@ -12,6 +12,7 @@ import { WaitlistModule } from '../waitlist/waitlist.module.js';
 import { ChatModule } from '../chat/chat.module.js';
 import { PaymentsModule } from '../payments/payments.module.js';
 import { CommonModule } from '../common/common.module.js';
+import { AdminModule } from './admin.module.js';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CommonModule } from '../common/common.module.js';
     WaitlistModule,
     ChatModule,
     PaymentsModule,
+    AdminModule,
   ],
   providers: [
     {

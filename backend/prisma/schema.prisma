@@ -34,6 +34,8 @@ model User {
   pendingTotpSecret   String?
   totpEnabled         Boolean  @default(false)
   totpEnabledAt       DateTime?
+  e2ePublicKey        String?
+  e2eKeyUploadedAt    DateTime?
   backupCodes         String[] @default([])
   emailVerifications EmailVerification[]
   invitesSent  Invite[]  @relation("InviteFrom")
@@ -50,6 +52,7 @@ model User {
   refreshTokens RefreshToken[]
   pushSubscriptions PushSubscription[]
   subscription Subscription?
+  messageReactions MessageReaction[]
 }
 
 model Subscription {
@@ -104,6 +107,8 @@ model Connection {
   createdAt DateTime @default(now())
 
   @@unique([userIdA, userIdB])
+  @@index([userIdA, createdAt(sort: Desc)])
+  @@index([userIdB, createdAt(sort: Desc)])
 }
 
 model ConnectionRequest {
@@ -128,8 +133,17 @@ model Message {
   attachmentName String?
   attachmentType String?
   readAt      DateTime?
+  editedAt    DateTime?
+  replyToId   String?
+  replyTo     Message? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[] @relation("MessageReplies")
   sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   recipient   User     @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  reactions   MessageReaction[]
+
+  @@index([senderId, recipientId, createdAt(sort: Desc)])
+  @@index([replyToId])
+  @@index([recipientId, senderId, createdAt(sort: Desc)])
 }
 
 model Room {
@@ -165,8 +179,28 @@ model RoomMessage {
   attachmentName    String?
   attachmentType    String?
   createdAt         DateTime @default(now())
+  editedAt          DateTime?
+  replyToId         String?
+  replyTo           RoomMessage? @relation("RoomMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies           RoomMessage[] @relation("RoomMessageReplies")
   room              Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   sender            User     @relation("RoomMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([replyToId])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String   @db.VarChar(10)
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("message_reactions")
 }
 
 model RefreshToken {

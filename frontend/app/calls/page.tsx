@@ -24,6 +24,7 @@ function CallsPageInner() {
   const [camOn, setCamOn] = useState(isVideo);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [screenSharing, setScreenSharing] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -40,6 +41,8 @@ function CallsPageInner() {
     toggleMic,
     toggleCamera,
     getLocalStream,
+    startScreenShare,
+    stopScreenShare,
   } = useWebRTC({
     onRemoteStream: (stream) => {
       if (remoteVideoRef.current) {
@@ -186,6 +189,16 @@ function CallsPageInner() {
     setCamOn(enabled);
   }, [toggleCamera]);
 
+  const handleScreenShare = useCallback(async () => {
+    if (screenSharing) {
+      await stopScreenShare();
+      setScreenSharing(false);
+    } else {
+      const ok = await startScreenShare();
+      if (ok) setScreenSharing(true);
+    }
+  }, [screenSharing, startScreenShare, stopScreenShare]);
+
   const formatDuration = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -283,6 +296,23 @@ function CallsPageInner() {
                       strokeLinecap="round"
                     />
                   )}
+                </svg>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleScreenShare()}
+                className={`flex h-14 w-14 items-center justify-center rounded-full transition-all active:scale-95 ${
+                  screenSharing
+                    ? 'bg-indigo-500/40 ring-1 ring-indigo-400 text-indigo-200'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+                title={screenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
                 </svg>
               </button>
 

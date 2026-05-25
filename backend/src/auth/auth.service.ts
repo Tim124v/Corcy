@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { setRefreshCookie } from './cookie.util.js';
 import { TempToken } from './temp-token.util.js';
 import { createTransport } from 'nodemailer';
-import { randomInt } from 'crypto';
+import { createHash, randomInt } from 'crypto';
 import { hashPassword, verifyPassword } from '../security/password.util.js';
 import { TokenRefreshService } from '../security/token-refresh.service.js';
 import { AuditLogService } from '../security/audit-log.service.js';
@@ -20,6 +20,10 @@ const VERIFICATION_CODE_EXPIRY_MINUTES = 10;
 
 function generateSixDigitCode(): string {
   return String(randomInt(100000, 1000000));
+}
+
+function hashVerificationCode(code: string): string {
+  return createHash('sha256').update(code, 'utf8').digest('hex');
 }
 
 function sendMail(opts: { to: string; subject: string; text: string; html?: string }): Promise<void> {
@@ -106,7 +110,7 @@ export class AuthService {
 
       invite = await this.prisma.invite.findFirst({
         where: {
-          AND: [{ OR: [{ tokenHash }, { token: inviteToken }] }, { isActive: true }],
+          AND: [{ tokenHash }, { isActive: true }],
         },
         select: {
           id: true,
@@ -207,7 +211,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + VERIFICATION_CODE_EXPIRY_MINUTES * 60 * 1000);
 
     await this.prisma.emailVerification.create({
-      data: { userId: user.id, code, expiresAt },
+      data: { userId: user.id, code: hashVerificationCode(code), expiresAt },
     });
 
     void sendVerificationEmail(emailNorm, code);
@@ -229,10 +233,12 @@ export class AuthService {
     userId: string,
     meta: AuthClientMeta | undefined,
     res: Response,
+    isMobile?: boolean,
   ): Promise<{
     ok: true;
     user: { id: string; email: string; name: string | null; avatarUrl: string | null; isAdmin: boolean };
     accessToken: string;
+    refreshToken?: string;
   }> {
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -243,15 +249,24 @@ export class AuthService {
       ipAddress: meta?.ipAddress,
       userAgent: meta?.userAgent,
     });
-    setRefreshCookie(res, pair.refreshToken);
+    if (!isMobile) {
+      setRefreshCookie(res, pair.refreshToken);
+    }
     return {
       ok: true,
       user: { id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl, isAdmin: u.isAdmin },
       accessToken: pair.accessToken,
+      ...(isMobile ? { refreshToken: pair.refreshToken } : {}),
     };
   }
 
-  async verifyEmail(email: string, code: string, meta: AuthClientMeta | undefined, res: Response) {
+  async verifyEmail(
+    email: string,
+    code: string,
+    meta: AuthClientMeta | undefined,
+    res: Response,
+    isMobile?: boolean,
+  ) {
     const emailNorm = email.toLowerCase().trim();
     const codeSanitized = String(code).replace(/\D/g, '').slice(0, 6);
     if (codeSanitized.length !== 6) {
@@ -280,7 +295,7 @@ export class AuthService {
     }
 
     const verification = await this.prisma.emailVerification.findFirst({
-      where: { userId: user.id, code: codeSanitized },
+      where: { userId: user.id, code: hashVerificationCode(codeSanitized) },
       orderBy: { createdAt: 'desc' },
     });
     if (!verification) {
@@ -309,7 +324,7 @@ export class AuthService {
       html: welcomeEmailHtml(user.name || user.email.split('@')[0]),
     }).catch(() => {}); // fire-and-forget, не блокируем ответ
 
-    const out = await this.issueFullTokens(user.id, meta, res);
+    const out = await this.issueFullTokens(user.id, meta, res, isMobile);
     await this.audit.log({
       userId: user.id,
       action: 'EMAIL_VERIFIED',
@@ -320,10 +335,26 @@ export class AuthService {
     return out;
   }
 
-  async resendVerification(email: string) {
+  async resendVerification(email: string, meta?: { ipAddress?: string }) {
     const emailNorm = email.toLowerCase().trim();
-    const user = await this.prisma.user.findUnique({ where: { email: emailNorm } });
 
+    const WINDOW_MS = 10 * 60 * 1000;
+    const MAX_RESENDS = 3;
+    const rlKey = `resend:${emailNorm}`;
+
+    const rl = await checkRateLimit(this.prisma, {
+      key: rlKey,
+      maxAttempts: MAX_RESENDS,
+      windowMs: WINDOW_MS,
+    });
+
+    if (!rl.allowed) {
+      return { ok: true };
+    }
+
+    await incrementRateLimit(this.prisma, { key: rlKey, windowMs: WINDOW_MS });
+
+    const user = await this.prisma.user.findUnique({ where: { email: emailNorm } });
     if (!user) return { ok: true };
     if (user.isVerified) return { ok: true };
 
@@ -332,14 +363,22 @@ export class AuthService {
 
     await this.prisma.$transaction([
       this.prisma.emailVerification.deleteMany({ where: { userId: user.id } }),
-      this.prisma.emailVerification.create({ data: { userId: user.id, code, expiresAt } }),
+      this.prisma.emailVerification.create({
+        data: { userId: user.id, code: hashVerificationCode(code), expiresAt },
+      }),
     ]);
 
     void sendVerificationEmail(emailNorm, code);
     return { ok: true };
   }
 
-  async login(email: string, password: string, meta: AuthClientMeta | undefined, res: Response) {
+  async login(
+    email: string,
+    password: string,
+    meta: AuthClientMeta | undefined,
+    res: Response,
+    isMobile?: boolean,
+  ) {
     const emailNorm = email.toLowerCase().trim();
     const user = await this.prisma.user.findUnique({
       where: { email: emailNorm },
@@ -378,7 +417,7 @@ export class AuthService {
       return { ok: true, requiresTwoFactor: true, tempToken };
     }
 
-    const out = await this.issueFullTokens(user.id, meta, res);
+    const out = await this.issueFullTokens(user.id, meta, res, isMobile);
     await this.audit.log({
       userId: user.id,
       action: 'USER_LOGIN',

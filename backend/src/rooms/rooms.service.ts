@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword } from '../security/password.util.js';
 import { mapMessagesText, prepareMessageForApi, prepareMessageForStorage } from '../security/message-encryption.util.js';
 import { ChatGateway } from '../chat/chat.gateway.js';
 import { PlanGuardService } from '../common/plan-guard.service.js';
+import { assertAllowedAttachmentUrl } from '../common/attachment-url.util.js';
 
 interface MembershipWithRoom {
   room: { id: string; name: string; ownerId: string; expiresAt: Date; owner: { id: string; email: string; name: string | null; avatarUrl: string | null } };
@@ -30,12 +31,11 @@ export class RoomsService {
     private readonly planGuard: PlanGuardService,
   ) {}
 
-  private async cleanupExpired() {
+  async cleanupExpired() {
     await this.prisma.room.deleteMany({ where: { expiresAt: { lt: new Date() } } });
   }
 
   async listRooms(userId: string) {
-    await this.cleanupExpired();
     const memberships = await this.prisma.roomMember.findMany({
       where: { userId },
       include: {
@@ -74,7 +74,6 @@ export class RoomsService {
   }
 
   async joinRoom(userId: string, roomId: string, password: string) {
-    await this.cleanupExpired();
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
       include: { owner: { select: { id: true, email: true, name: true, avatarUrl: true } } },
@@ -94,7 +93,6 @@ export class RoomsService {
   }
 
   async deleteRoom(userId: string, roomId: string) {
-    await this.cleanupExpired();
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
       select: { id: true, ownerId: true },
@@ -108,7 +106,6 @@ export class RoomsService {
 
   /** Покинуть комнату (только для участников, не владельцев). */
   async leaveRoom(userId: string, roomId: string) {
-    await this.cleanupExpired();
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
       select: { id: true, ownerId: true },
@@ -138,7 +135,6 @@ export class RoomsService {
   }
 
   async listMessages(userId: string, roomId: string, opts?: { before?: string; limit?: number }) {
-    await this.cleanupExpired();
     await this.ensureMember(userId, roomId);
 
     const limit = Math.min(opts?.limit ?? 50, 100);
@@ -150,7 +146,12 @@ export class RoomsService {
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
+      include: {
+        sender: { select: { id: true, email: true, name: true, avatarUrl: true } },
+        replyTo: {
+          select: { id: true, text: true, senderId: true, attachmentName: true },
+        },
+      },
     });
 
     messages.reverse();
@@ -158,7 +159,9 @@ export class RoomsService {
     const hasMore = messages.length === limit;
     const nextCursor = hasMore ? messages[0]?.id : undefined;
 
-    const decrypted = mapMessagesText(messages) as RoomMessageWithSender[];
+    const decrypted = mapMessagesText(messages) as (RoomMessageWithSender & {
+      replyTo?: { id: string; text: string; senderId: string; attachmentName: string | null } | null;
+    })[];
     return {
       messages: decrypted.map((m) => ({
         id: m.id,
@@ -170,6 +173,12 @@ export class RoomsService {
         attachmentType: m.attachmentType ?? undefined,
         createdAt: m.createdAt,
         sender: m.sender,
+        replyTo: m.replyTo
+          ? {
+              ...m.replyTo,
+              text: prepareMessageForApi(m.replyTo.text),
+            }
+          : undefined,
       })),
       hasMore,
       nextCursor,
@@ -181,11 +190,29 @@ export class RoomsService {
     roomId: string,
     text: string,
     attachment?: { url?: string; name?: string; type?: string } | null,
+    replyToId?: string,
   ) {
-    await this.cleanupExpired();
     await this.ensureMember(userId, roomId);
+
+    let validatedReplyToId: string | null = null;
+    if (replyToId) {
+      const replyTarget = await this.prisma.roomMessage.findFirst({
+        where: { id: replyToId, roomId },
+        select: { id: true },
+      });
+      if (replyTarget) validatedReplyToId = replyTarget.id;
+    }
+
+    assertAllowedAttachmentUrl(attachment?.url);
+
     const hasAttachment = !!attachment?.url;
     const textTrim = text?.trim() ?? '';
+
+    const MAX_TEXT_LENGTH = 4000;
+    if (textTrim.length > MAX_TEXT_LENGTH) {
+      throw new BadRequestException(`Сообщение не должно превышать ${MAX_TEXT_LENGTH} символов`);
+    }
+
     if (!textTrim && !hasAttachment) throw new BadRequestException('Текст или вложение обязательны');
     const storedText = textTrim ? prepareMessageForStorage(textTrim) : '';
     const message = await this.prisma.roomMessage.create({
@@ -196,8 +223,14 @@ export class RoomsService {
         attachmentUrl: attachment?.url ?? null,
         attachmentName: attachment?.name ?? null,
         attachmentType: attachment?.type ?? null,
+        replyToId: validatedReplyToId,
       },
-      include: { sender: { select: { id: true, email: true, name: true, avatarUrl: true } } },
+      include: {
+        sender: { select: { id: true, email: true, name: true, avatarUrl: true } },
+        replyTo: {
+          select: { id: true, text: true, senderId: true, attachmentName: true },
+        },
+      },
     });
     const out = {
       id: message.id,
@@ -208,6 +241,12 @@ export class RoomsService {
       attachmentType: message.attachmentType ?? undefined,
       createdAt: message.createdAt,
       sender: message.sender,
+      replyTo: message.replyTo
+        ? {
+            ...message.replyTo,
+            text: prepareMessageForApi(message.replyTo.text),
+          }
+        : undefined,
     };
 
     // Эмитим событие всем участникам комнаты в реальном времени
@@ -217,5 +256,113 @@ export class RoomsService {
     });
 
     return out;
+  }
+
+  async searchMessages(
+    userId: string,
+    roomId: string,
+    query: string,
+    opts?: { limit?: number },
+  ) {
+    await this.ensureMember(userId, roomId);
+
+    const { isEncryptionEnabled } = await import('../security/encryption.util.js');
+    if (isEncryptionEnabled()) {
+      return { encrypted: true };
+    }
+
+    const q = query.trim();
+    if (!q || q.length < 2) return { results: [] };
+
+    const limit = Math.min(opts?.limit ?? 20, 50);
+
+    const messages = await this.prisma.roomMessage.findMany({
+      where: {
+        roomId,
+        text: { contains: q, mode: 'insensitive' },
+        systemEventType: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { sender: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+    });
+
+    return {
+      results: messages.map((m) => ({
+        messageId: m.id,
+        text: prepareMessageForApi(m.text),
+        createdAt: m.createdAt,
+        sender: m.sender,
+      })),
+    };
+  }
+
+  async editMessage(
+    userId: string,
+    roomId: string,
+    messageId: string,
+    newText: string,
+  ) {
+    await this.ensureMember(userId, roomId);
+
+    const message = await this.prisma.roomMessage.findUnique({
+      where: { id: messageId },
+      select: { id: true, senderId: true, roomId: true, createdAt: true },
+    });
+
+    if (!message) throw new NotFoundException('Сообщение не найдено');
+    if (message.roomId !== roomId) throw new ForbiddenException('Сообщение не в этой комнате');
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('Можно редактировать только свои сообщения');
+    }
+
+    const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+    if (Date.now() - message.createdAt.getTime() > EDIT_WINDOW_MS) {
+      throw new ForbiddenException('Сообщение можно редактировать только в течение 24 часов');
+    }
+
+    const trimmed = newText.trim();
+    if (!trimmed) throw new BadRequestException('Текст не может быть пустым');
+    if (trimmed.length > 4000) throw new BadRequestException('Максимум 4000 символов');
+
+    const editedAt = new Date();
+    const updated = await this.prisma.roomMessage.update({
+      where: { id: messageId },
+      data: { text: prepareMessageForStorage(trimmed), editedAt },
+      select: { id: true, text: true, editedAt: true },
+    });
+
+    const result = {
+      id: updated.id,
+      text: prepareMessageForApi(updated.text),
+      editedAt: updated.editedAt!,
+    };
+
+    this.chatGateway.sendToRoom(roomId, 'roomMessageEdited', {
+      roomId,
+      messageId: result.id,
+      text: result.text,
+      editedAt: result.editedAt.toISOString(),
+    });
+
+    return { ok: true, message: result };
+  }
+
+  async listMembers(userId: string, roomId: string) {
+    await this.ensureMember(userId, roomId);
+    const members = await this.prisma.roomMember.findMany({
+      where: { roomId },
+      include: {
+        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return members.map((m) => ({
+      userId: m.user.id,
+      name: m.user.name,
+      email: m.user.email,
+      avatarUrl: m.user.avatarUrl,
+      joinedAt: m.joinedAt,
+    }));
   }
 }

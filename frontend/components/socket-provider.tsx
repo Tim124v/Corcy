@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../store/auth';
 import { useChatActivityStore } from '../store/chat-activity';
-import { connectSocket, getSocket } from '../store/socket';
+import { useIncomingCallStore } from '../store/incoming-call';
+import { useGroupCallNotifStore } from '../store/group-call-notification';
+import { connectSocket } from '../store/socket';
 import { usePresenceStore } from '../store/presence';
 
 function playSound() {
@@ -44,8 +45,13 @@ function notify(title: string, body: string, tag: string) {
 }
 
 export function SocketProvider() {
-  const router = useRouter();
   const accessToken = useAuthStore((s) => s.accessToken);
+  const setIncomingCall = useIncomingCallStore((s) => s.setCall);
+  const setIncomingCallRef = useRef(setIncomingCall);
+  setIncomingCallRef.current = setIncomingCall;
+  const setGroupCallNotif = useGroupCallNotifStore((s) => s.setNotification);
+  const setGroupCallNotifRef = useRef(setGroupCallNotif);
+  setGroupCallNotifRef.current = setGroupCallNotif;
   const incrementUnreadDirect = useChatActivityStore((s) => s.incrementUnreadDirect);
   const incrementUnreadRoom = useChatActivityStore((s) => s.incrementUnreadRoom);
   const setOnlineIds = usePresenceStore((s) => s.setOnlineIds);
@@ -112,25 +118,42 @@ export function SocketProvider() {
     });
 
     socket.on('call:incoming', (data: unknown) => {
-      const d = data as { fromUserId: string; offer: RTCSessionDescriptionInit };
+      const d = data as { fromUserId: string; fromName?: string; offer: RTCSessionDescriptionInit };
       if (!d?.fromUserId || !d?.offer) return;
 
-      const accept = window.confirm('Входящий звонок. Ответить?');
+      const hasVideo = typeof d.offer.sdp === 'string' && d.offer.sdp.includes('m=video');
+      const fromName = d.fromName || d.fromUserId.slice(0, 8);
 
-      if (accept) {
-        const encodedOffer = encodeURIComponent(JSON.stringify(d.offer));
-        const hasVideo = typeof d.offer.sdp === 'string' && d.offer.sdp.includes('m=video');
-        router.push(
-          `/calls?peerId=${d.fromUserId}&incoming=true&offer=${encodedOffer}&video=${hasVideo ? 'true' : 'false'}`,
-        );
-      } else {
-        getSocket()?.emit('call:reject', { toUserId: d.fromUserId });
-      }
+      setIncomingCallRef.current({
+        fromUserId: d.fromUserId,
+        fromName,
+        offer: d.offer,
+        isVideo: hasVideo,
+      });
+    });
+
+    socket.on('gcall:peer-joined', (data: unknown) => {
+      const d = data as { userId: string; roomId: string; displayName?: string; roomName?: string };
+      if (!d?.userId || !d?.roomId) return;
+
+      const currentUserId = useAuthStore.getState().user?.id;
+      if (d.userId === currentUserId) return;
+
+      if (typeof window !== 'undefined' && window.location.pathname === '/group-call') return;
+
+      setGroupCallNotifRef.current({
+        roomId: d.roomId,
+        roomName: d.roomName || 'Комната',
+        callerName: d.displayName || d.userId.slice(0, 8),
+        callerId: d.userId,
+      });
+
+      playSound();
     });
 
     // НЕ отключаем при размонтировании — сокет живёт как синглтон
     return () => {};
-  }, [accessToken, router]);
+  }, [accessToken]);
 
   return null;
 }
