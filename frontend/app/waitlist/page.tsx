@@ -53,7 +53,7 @@ export default function WaitlistPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/connexy_icon.svg"
-            alt="Connexy"
+            alt="Corsy"
             width={52}
             height={52}
             className="drop-shadow-[0_0_16px_rgba(99,102,241,0.7)]"
@@ -83,7 +83,7 @@ export default function WaitlistPage() {
             <div className="mb-6 text-center">
               <h2 className="text-xl font-semibold text-white">Request Access</h2>
               <p className="mt-2 text-sm text-slate-400">
-                Connexy is invite-only. Join the waitlist and we'll reach out when your spot is ready.
+                Corsy is invite-only. Join the waitlist and we'll reach out when your spot is ready.
               </p>
             </div>
 

@@ -181,8 +181,8 @@ export class MessagesService {
         where: { id: currentUserId },
         select: { name: true, email: true },
       });
-      const name = senderName?.name || senderName?.email?.split('@')[0] || 'Connexy';
-      const bodyText = hasText ? text.trim() : attachment?.name?.trim() || 'Connexy';
+      const name = senderName?.name || senderName?.email?.split('@')[0] || 'Corsy';
+      const bodyText = hasText ? text.trim() : attachment?.name?.trim() || 'Corsy';
 
       void this.push
         .sendToUser(to, {

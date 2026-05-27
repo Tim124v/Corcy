@@ -29,26 +29,26 @@ function sendWaitlistConfirmEmail(to: string, name?: string | null): Promise<voi
     .sendMail({
       from: smtpFrom,
       to,
-      subject: "You're on the Connexy waitlist",
+      subject: "You're on the Corsy waitlist",
       html: `
         <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;background:#020617;color:#f8fafc;padding:40px 32px;border-radius:16px;">
           <div style="text-align:center;margin-bottom:32px;">
-            <h1 style="font-size:28px;font-weight:700;letter-spacing:0.3em;margin:0;">CONNEXY</h1>
+            <h1 style="font-size:28px;font-weight:700;letter-spacing:0.3em;margin:0;">CORSY</h1>
             <p style="color:#6366f1;font-size:12px;letter-spacing:0.2em;margin-top:4px;">PRIVATE · SECURE</p>
           </div>
           <h2 style="font-size:20px;font-weight:600;margin-bottom:12px;">You're on the list, ${displayName}!</h2>
           <p style="color:#94a3b8;line-height:1.6;margin-bottom:24px;">
-            Thanks for your interest in Connexy. We'll review your request and send you an invite link when your spot is ready.
+            Thanks for your interest in Corsy. We'll review your request and send you an invite link when your spot is ready.
           </p>
           <div style="background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);border-radius:12px;padding:16px;margin-bottom:24px;">
             <p style="margin:0;font-size:13px;color:#a5b4fc;">
-              🔐 <strong>What is Connexy?</strong><br/>
+              🔐 <strong>What is Corsy?</strong><br/>
               A private messaging space — only the people you choose.
               End-to-end encrypted. Invite only.
             </p>
           </div>
           <p style="color:#475569;font-size:12px;text-align:center;">
-            Connexy · Private connections, refined
+            Corsy · Private connections, refined
           </p>
         </div>
       `,
@@ -88,15 +88,15 @@ function sendInviteFromWaitlistEmail(
     .sendMail({
       from: smtpFrom,
       to,
-      subject: 'Your Connexy invite is ready 🎉',
+      subject: 'Your Corsy invite is ready 🎉',
       html: `
         <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;background:#020617;color:#f8fafc;padding:40px 32px;border-radius:16px;">
           <div style="text-align:center;margin-bottom:32px;">
-            <h1 style="font-size:28px;font-weight:700;letter-spacing:0.3em;margin:0;">CONNEXY</h1>
+            <h1 style="font-size:28px;font-weight:700;letter-spacing:0.3em;margin:0;">CORSY</h1>
           </div>
           <h2 style="font-size:20px;font-weight:600;margin-bottom:12px;">Your invite is ready, ${displayName}!</h2>
           <p style="color:#94a3b8;line-height:1.6;margin-bottom:24px;">
-            Your spot on Connexy is confirmed. Click the button below to create your account.
+            Your spot on Corsy is confirmed. Click the button below to create your account.
           </p>
           <div style="text-align:center;margin-bottom:24px;">
             <a href="${inviteLink}"
@@ -106,7 +106,7 @@ function sendInviteFromWaitlistEmail(
           </div>
           <p style="color:#475569;font-size:12px;text-align:center;">
             This link expires in 48 hours.<br/>
-            Connexy · Private connections, refined
+            Corsy · Private connections, refined
           </p>
         </div>
       `,

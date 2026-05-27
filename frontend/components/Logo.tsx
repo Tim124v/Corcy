@@ -25,7 +25,7 @@ export function Logo({ variant = 'full', layout = 'stack', href = '/', className
   const icon = (
     <Image
       src="/connexy_icon.svg"
-      alt="Connexy"
+      alt="Corsy"
       width={iconSize}
       height={iconSize}
       className="shrink-0"
@@ -36,7 +36,7 @@ export function Logo({ variant = 'full', layout = 'stack', href = '/', className
   const text = (
     <Image
       src="/logo.svg"
-      alt="Connexy"
+      alt="Corsy"
       width={160}
       height={60}
       className={className}

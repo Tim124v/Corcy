@@ -33,7 +33,7 @@ export function PwaRegister() {
               navigator.serviceWorker.controller
             ) {
               // Новая версия доступна — можно показать тост
-              console.log('[PWA] Новая версия Connexy доступна');
+              console.log('[PWA] Новая версия Corsy доступна');
             }
           });
         });

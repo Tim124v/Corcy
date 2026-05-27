@@ -301,7 +301,7 @@ export class ConnectionsService {
           .sendMail({
             from: smtpFrom,
             to: toNorm,
-            subject: 'Вас приглашают в Connexy',
+            subject: 'Вас приглашают в Corsy',
             text: inviteEmailText(link, me.name || me.email),
             html: inviteEmailHtml(link, me.name || me.email),
           })

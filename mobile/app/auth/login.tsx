@@ -68,7 +68,7 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={s.logo}>CONNEXY</Text>
+        <Text style={s.logo}>CORSY</Text>
         <Text style={s.subtitle}>Приватный мессенджер</Text>
 
         {error ? <Text style={s.error}>{error}</Text> : null}

@@ -13,7 +13,7 @@ export default function NoInvitePage() {
       </div>
 
       <div className="relative z-10 w-full max-w-md text-center">
-        <p className="text-white/30 text-xs font-medium tracking-[0.3em] uppercase mb-10">C O N N E X Y</p>
+        <p className="text-white/30 text-xs font-medium tracking-[0.3em] uppercase mb-10">C O R S Y</p>
 
         <div
           className="w-20 h-20 rounded-2xl bg-white/5 border border-white/10
@@ -24,7 +24,7 @@ export default function NoInvitePage() {
 
         <h1 className="text-white text-2xl font-semibold mb-3">Только по приглашению</h1>
         <p className="text-white/50 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
-          Connexy — закрытая сеть. Чтобы создать аккаунт, тебе нужна ссылка-приглашение от кого-то кто уже в системе.
+          Corsy — закрытая сеть. Чтобы создать аккаунт, тебе нужна ссылка-приглашение от кого-то кто уже в системе.
         </p>
 
         <div className="bg-white/5 border border-white/8 rounded-2xl p-5 mb-8 text-left space-y-3">
@@ -39,7 +39,7 @@ export default function NoInvitePage() {
             <span className="text-lg">🔗</span>
             <div>
               <p className="text-white text-sm font-medium">Перейди по ссылке</p>
-              <p className="text-white/40 text-xs mt-0.5">Ссылка выглядит как connexy.app/invite/...</p>
+              <p className="text-white/40 text-xs mt-0.5">Ссылка выглядит как corsy.app/invite/...</p>
             </div>
           </div>
           <div className="flex items-start gap-3">

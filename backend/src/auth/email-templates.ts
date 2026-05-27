@@ -38,14 +38,14 @@ function htmlWrapper(content: string): string {
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="white" opacity="0.9"/>
       </svg>
     </div>
-    <p class="logo-text">CONNEXY</p>
+    <p class="logo-text">CORSY</p>
     <p class="logo-sub">Private · Secure</p>
   </div>
   ${content}
   <div class="footer">
-    <p>© ${new Date().getFullYear()} Connexy. Все права защищены.<br>
-    <a href="${BASE_URL}">connexy.app</a> · 
-    Вы получили это письмо потому что зарегистрированы в Connexy.</p>
+    <p>© ${new Date().getFullYear()} Corsy. Все права защищены.<br>
+    <a href="${BASE_URL}">corsy.app</a> · 
+    Вы получили это письмо потому что зарегистрированы в Corsy.</p>
   </div>
 </div>
 </body>
@@ -63,7 +63,7 @@ export function verificationEmailHtml(code: string): string {
         <div class="code">${code}</div>
         <div class="code-hint">Код действителен 10 минут</div>
       </div>
-      <p>Если вы не регистрировались в Connexy — просто проигнорируйте это письмо.</p>
+      <p>Если вы не регистрировались в Corsy — просто проигнорируйте это письмо.</p>
       <div class="warning">
         <p>⚠ Никогда не передавайте этот код другим людям.</p>
       </div>
@@ -72,7 +72,7 @@ export function verificationEmailHtml(code: string): string {
 }
 
 export function verificationEmailText(code: string): string {
-  return `Connexy — подтверждение email\n\nВаш код: ${code}\n\nКод действителен 10 минут.\nЕсли вы не регистрировались — проигнорируйте это письмо.`;
+  return `Corsy — подтверждение email\n\nВаш код: ${code}\n\nКод действителен 10 минут.\nЕсли вы не регистрировались — проигнорируйте это письмо.`;
 }
 
 // ── Инвайт ────────────────────────────────────────────────────
@@ -81,8 +81,8 @@ export function inviteEmailHtml(inviteUrl: string, senderName?: string): string 
   const from = senderName ? `<strong style="color:#a5b4fc">${senderName}</strong>` : 'кто-то';
   return htmlWrapper(`
     <div class="body">
-      <h1>Вас приглашают в Connexy</h1>
-      <p>${from} приглашает вас присоединиться к приватной сети Connexy — безопасному мессенджеру с invite-only доступом.</p>
+      <h1>Вас приглашают в Corsy</h1>
+      <p>${from} приглашает вас присоединиться к приватной сети Corsy — безопасному мессенджеру с invite-only доступом.</p>
       <div style="text-align:center;margin:28px 0;">
         <a href="${inviteUrl}" class="btn">Принять приглашение →</a>
       </div>
@@ -100,7 +100,7 @@ export function inviteEmailHtml(inviteUrl: string, senderName?: string): string 
 
 export function inviteEmailText(inviteUrl: string, senderName?: string): string {
   const from = senderName ? `${senderName}` : 'кто-то';
-  return `Connexy — приглашение\n\n${from} приглашает вас в Connexy.\n\nСсылка: ${inviteUrl}\n\nПриглашение ограничено по времени.`;
+  return `Corsy — приглашение\n\n${from} приглашает вас в Corsy.\n\nСсылка: ${inviteUrl}\n\nПриглашение ограничено по времени.`;
 }
 
 // ── Welcome ───────────────────────────────────────────────────
@@ -109,9 +109,9 @@ export function welcomeEmailHtml(userName: string): string {
   return htmlWrapper(`
     <div class="body">
       <h1>Добро пожаловать, ${userName}!</h1>
-      <p>Ваш аккаунт в Connexy активирован. Вы в приватной сети — здесь только те, кого пригласили лично.</p>
+      <p>Ваш аккаунт в Corsy активирован. Вы в приватной сети — здесь только те, кого пригласили лично.</p>
       <div style="text-align:center;margin:28px 0;">
-        <a href="${BASE_URL}/dashboard" class="btn">Открыть Connexy →</a>
+        <a href="${BASE_URL}/dashboard" class="btn">Открыть Corsy →</a>
       </div>
       <hr class="divider">
       <p style="font-size:14px;color:#64748b;margin-bottom:8px;">Что можно сделать прямо сейчас:</p>
@@ -125,6 +125,6 @@ export function welcomeEmailHtml(userName: string): string {
 }
 
 export function welcomeEmailText(userName: string): string {
-  return `Добро пожаловать в Connexy, ${userName}!\n\nВаш аккаунт активирован.\n\nОткрыть: ${BASE_URL}/dashboard`;
+  return `Добро пожаловать в Corsy, ${userName}!\n\nВаш аккаунт активирован.\n\nОткрыть: ${BASE_URL}/dashboard`;
 }
 

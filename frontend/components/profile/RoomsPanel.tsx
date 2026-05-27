@@ -47,8 +47,8 @@ export function RoomsPanel({
   const copyRoomInvite = async (room: Room) => {
     const inviteText =
       language === 'en'
-        ? `Join my room in Connexy\nRoom: ${room.name}\nCode: ${room.id}\nPassword: ask the room owner`
-        : `Присоединяйся к моей комнате в Connexy\nКомната: ${room.name}\nКод: ${room.id}\nПароль: запросите у владельца комнаты`;
+        ? `Join my room in Corsy\nRoom: ${room.name}\nCode: ${room.id}\nPassword: ask the room owner`
+        : `Присоединяйся к моей комнате в Corsy\nКомната: ${room.name}\nКод: ${room.id}\nПароль: запросите у владельца комнаты`;
 
     try {
       await navigator.clipboard?.writeText(inviteText);
@@ -66,8 +66,8 @@ export function RoomsPanel({
 
     const text =
       language === 'en'
-        ? `Join my room in Connexy\nRoom: ${room.name}\nCode: ${room.id}\nPassword: ask the room owner`
-        : `Присоединяйся к моей комнате в Connexy\nКомната: ${room.name}\nКод: ${room.id}\nПароль: запросите у владельца комнаты`;
+        ? `Join my room in Corsy\nRoom: ${room.name}\nCode: ${room.id}\nPassword: ask the room owner`
+        : `Присоединяйся к моей комнате в Corsy\nКомната: ${room.name}\nКод: ${room.id}\nПароль: запросите у владельца комнаты`;
 
     try {
       await navigator.share({

@@ -63,7 +63,7 @@ function sendMail(opts: { to: string; subject: string; text: string; html?: stri
 function sendVerificationEmail(to: string, code: string): Promise<void> {
   return sendMail({
     to,
-    subject: 'Connexy — подтверждение email',
+    subject: 'Corsy — подтверждение email',
     text: verificationEmailText(code),
     html: verificationEmailHtml(code),
   });
@@ -319,7 +319,7 @@ export class AuthService {
     // После успешной верификации — отправить welcome
     void sendMail({
       to: user.email,
-      subject: 'Добро пожаловать в Connexy!',
+      subject: 'Добро пожаловать в Corsy!',
       text: welcomeEmailText(user.name || user.email.split('@')[0]),
       html: welcomeEmailHtml(user.name || user.email.split('@')[0]),
     }).catch(() => {}); // fire-and-forget, не блокируем ответ

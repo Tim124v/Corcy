@@ -122,7 +122,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/connexy_icon.svg"
-                alt="Connexy"
+                alt="Corsy"
                 width={38}
                 height={38}
                 className="shrink-0 drop-shadow-[0_0_10px_rgba(99,102,241,0.7)]"
