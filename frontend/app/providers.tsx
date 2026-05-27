@@ -2,7 +2,7 @@
 
 import type React from 'react';
 import { useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '../store/auth';
 import { useIncomingCallStore } from '../store/incoming-call';
 import { useGroupCallNotifStore } from '../store/group-call-notification';
@@ -17,6 +17,7 @@ import { GroupCallToast } from '../components/GroupCallToast';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const incomingCall = useIncomingCallStore((s) => s.call);
   const clearIncomingCall = useIncomingCallStore((s) => s.setCall);
   const groupCallNotif = useGroupCallNotifStore((s) => s.notification);
@@ -24,12 +25,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   const handleAcceptCall = useCallback(() => {
     if (!incomingCall) return;
-    const encodedOffer = encodeURIComponent(JSON.stringify(incomingCall.offer));
-    clearIncomingCall(null);
+    // offer остаётся в store — на /calls читается из useIncomingCallStore
     router.push(
-      `/calls?peerId=${incomingCall.fromUserId}&peerName=${encodeURIComponent(incomingCall.fromName)}&incoming=true&offer=${encodedOffer}&video=${incomingCall.isVideo ? 'true' : 'false'}`,
+      `/calls?peerId=${incomingCall.fromUserId}&peerName=${encodeURIComponent(incomingCall.fromName)}&incoming=true&video=${incomingCall.isVideo ? 'true' : 'false'}`,
     );
-  }, [incomingCall, clearIncomingCall, router]);
+  }, [incomingCall, router]);
 
   const handleRejectCall = useCallback(() => {
     if (!incomingCall) return;
@@ -90,7 +90,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <LanguageProvider>
         <PwaRegister />
         <SocketProvider />
-        {incomingCall && (
+        {incomingCall && pathname !== '/calls' && (
           <IncomingCallToast
             fromName={incomingCall.fromName}
             isVideo={incomingCall.isVideo}
