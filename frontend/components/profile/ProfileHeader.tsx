@@ -107,7 +107,7 @@ export function ProfileHeader({
               {language === 'en' ? 'Premium Member' : 'Премиум'}
             </span>
           </div>
-          <p className="mt-1 text-base text-slate-600 dark:text-slate-300">@{handle}.connexy</p>
+          <p className="mt-1 text-base text-slate-600 dark:text-slate-300">@{handle}.corsy</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{language === 'en' ? 'Your ID' : 'Ваш ID'}</span>
             <code className="rounded-lg border border-slate-200 bg-slate-100/80 px-2.5 py-1.5 text-[13px] font-mono text-slate-800 dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-200">{user.id}</code>

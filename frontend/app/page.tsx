@@ -237,7 +237,7 @@ export default function LandingPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/connexy_icon.svg"
-              alt="Connexy"
+              alt="Corsy"
               width={70}
               height={70}
               className="logo-glow sm:w-[90px] sm:h-[90px]"
@@ -332,7 +332,7 @@ export default function LandingPage() {
         {/* Footer */}
         <footer className="relative py-6 text-center">
           <p className="text-[11px] text-slate-700 tracking-widest uppercase">
-            Connexy · Private connections, refined
+            Corsy · Private connections, refined
           </p>
         </footer>
       </main>

@@ -1,4 +1,4 @@
-# Render: бэкенд Connexy
+# Render: бэкенд Corsy
 # В Dashboard (Settings → Build & Deploy):
 #   Root Directory: backend
 #   Build Command:  npm install --include=dev && npx prisma generate && npm run build
@@ -6,7 +6,7 @@
 
 services:
   - type: web
-    name: connexy-backend
+    name: corsy-backend
     runtime: node
     rootDir: backend
 

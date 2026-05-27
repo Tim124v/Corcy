@@ -137,8 +137,8 @@ export function AppearancePanel({
               <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                 {notificationsEnabled
                   ? language === 'en'
-                    ? 'New room, invite, and security events will appear in Connexy.'
-                    : 'Новые события комнат, приглашений и безопасности будут появляться в Connexy.'
+                    ? 'New room, invite, and security events will appear in Corsy.'
+                    : 'Новые события комнат, приглашений и безопасности будут появляться в Corsy.'
                   : language === 'en'
                     ? 'New notifications are disabled.'
                     : 'Новые уведомления выключены.'}

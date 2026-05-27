@@ -1,6 +1,6 @@
 <div align="center">
 
-# CONNEXY
+# CORSY
 
 **Private messenger with invite-only access**
 
@@ -16,7 +16,7 @@
 
 ## About
 
-Connexy is a full-featured messenger with invites, group rooms, video calls, and end-to-end encryption. The project went through a full cycle: security audit → vulnerability fixes → feature development → production deployment.
+Corsy is a full-featured messenger with invites, group rooms, video calls, and end-to-end encryption. The project went through a full cycle: security audit → vulnerability fixes → feature development → production deployment.
 
 **Three platforms from a single monorepo:** web (Next.js), backend (NestJS), and a mobile app (Expo).
 
@@ -162,7 +162,7 @@ cp backend/.env.example backend/.env
 
 Minimal set for local run:
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/connexy
+DATABASE_URL=postgresql://user:password@localhost:5432/corsy
 JWT_SECRET=your-secret-key-min-32-chars
 FRONTEND_URL=http://localhost:3000
 ```
@@ -262,7 +262,7 @@ Without LiveKit the app falls back to WebRTC Mesh automatically (up to 6 partici
 ## Project structure
 
 ```
-Connexy.com/
+Corsy.com/
 ├── backend/          # NestJS API
 │   ├── src/
 │   │   ├── auth/     # JWT, 2FA, email verification
@@ -292,7 +292,7 @@ Made with ❤️ · <a href="https://connexy-com-frontend.vercel.app">Live Demo<
 </div>
 <div align="center">
 
-# CONNEXY
+# CORSY
 
 **Приватный мессенджер с invite-only доступом**
 
@@ -308,7 +308,7 @@ Made with ❤️ · <a href="https://connexy-com-frontend.vercel.app">Live Demo<
 
 ## О проекте
 
-Connexy — полноценный мессенджер с приглашениями, групповыми комнатами, видеозвонками и end-to-end шифрованием. Проект прошёл полный цикл: security audit → исправление уязвимостей → разработка фич → деплой на продакшн.
+Corsy — полноценный мессенджер с приглашениями, групповыми комнатами, видеозвонками и end-to-end шифрованием. Проект прошёл полный цикл: security audit → исправление уязвимостей → разработка фич → деплой на продакшн.
 
 **Три платформы из одного монорепо:** веб (Next.js), backend (NestJS), мобильное приложение (Expo).
 
@@ -454,7 +454,7 @@ cp backend/.env.example backend/.env
 
 Минимальный набор для локального запуска:
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/connexy
+DATABASE_URL=postgresql://user:password@localhost:5432/corsy
 JWT_SECRET=your-secret-key-min-32-chars
 FRONTEND_URL=http://localhost:3000
 ```
@@ -554,7 +554,7 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 ## Структура проекта
 
 ```
-Connexy.com/
+Corsy.com/
 ├── backend/          # NestJS API
 │   ├── src/
 │   │   ├── auth/     # JWT, 2FA, email verification

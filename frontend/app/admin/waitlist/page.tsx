@@ -205,7 +205,7 @@ export default function AdminPage() {
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Admin Panel</h1>
-            <p className="mt-1 text-sm text-slate-400">Connexy · {user.email}</p>
+            <p className="mt-1 text-sm text-slate-400">Corsy · {user.email}</p>
           </div>
           <button
             onClick={() => router.push('/dashboard')}

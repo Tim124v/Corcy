@@ -9,7 +9,7 @@ type LanguageContextValue = {
   setLanguage: (language: AppLanguage) => void;
 };
 
-const STORAGE_KEY = 'connexy-lang';
+const STORAGE_KEY = 'corsy-lang';
 
 const LanguageContext = createContext<LanguageContextValue>({
   language: 'ru',
