@@ -55,6 +55,8 @@ type CallHandlers = {
 export function useWebRTC(handlers: CallHandlers) {
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
+  const iceCandidateBuffer = useRef<RTCIceCandidateInit[]>([]);
+  const remoteDescSet = useRef(false);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
@@ -118,6 +120,18 @@ export function useWebRTC(handlers: CallHandlers) {
     [createPeerConnection],
   );
 
+  const flushIceCandidates = useCallback(async () => {
+    remoteDescSet.current = true;
+    const buffered = iceCandidateBuffer.current.splice(0);
+    for (const candidate of buffered) {
+      try {
+        await pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
   const answerCall = useCallback(
     async (peerId: string, offer: RTCSessionDescriptionInit, video: boolean) => {
       const socket = getSocket();
@@ -135,6 +149,7 @@ export function useWebRTC(handlers: CallHandlers) {
         await pc.current.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.current.createAnswer();
         await pc.current.setLocalDescription(answer);
+        await flushIceCandidates();
 
         socket.emit('call:answer', { toUserId: peerId, answer });
       } catch (err) {
@@ -143,26 +158,37 @@ export function useWebRTC(handlers: CallHandlers) {
         );
       }
     },
-    [createPeerConnection],
+    [createPeerConnection, flushIceCandidates],
   );
 
   const addIceCandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
+    if (!remoteDescSet.current) {
+      iceCandidateBuffer.current.push(candidate);
+      return;
+    }
     try {
       await pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
     } catch {
-      /* ignore invalid / late candidates */
+      /* ignore stale candidates */
     }
   }, []);
 
-  const setRemoteAnswer = useCallback(async (answer: RTCSessionDescriptionInit) => {
-    try {
-      await pc.current?.setRemoteDescription(new RTCSessionDescription(answer));
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  const setRemoteAnswer = useCallback(
+    async (answer: RTCSessionDescriptionInit) => {
+      try {
+        await pc.current?.setRemoteDescription(new RTCSessionDescription(answer));
+        await flushIceCandidates();
+      } catch {
+        /* ignore */
+      }
+    },
+    [flushIceCandidates],
+  );
 
   const endCall = useCallback((peerId?: string) => {
+    remoteDescSet.current = false;
+    iceCandidateBuffer.current = [];
+
     const socket = getSocket();
     if (peerId && socket) socket.emit('call:end', { toUserId: peerId });
 
@@ -247,5 +273,6 @@ export function useWebRTC(handlers: CallHandlers) {
     getLocalStream,
     startScreenShare,
     stopScreenShare,
+    flushIceCandidates,
   };
 }

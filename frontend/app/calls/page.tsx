@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '../../store/auth';
+import { useIncomingCallStore } from '../../store/incoming-call';
 import { useWebRTC } from '../../hooks/use-webrtc';
 import { getSocket } from '../../store/socket';
 
@@ -17,7 +18,9 @@ function CallsPageInner() {
   const peerName = params.get('peerName') ?? 'Собеседник';
   const isVideo = params.get('video') === 'true';
   const isIncoming = params.get('incoming') === 'true';
-  const incomingOffer = params.get('offer');
+  const storedCall = useIncomingCallStore((s) => s.call);
+  const clearIncomingCall = useIncomingCallStore((s) => s.setCall);
+  const incomingOffer = storedCall?.offer ?? null;
 
   const [callState, setCallState] = useState<CallState>(isIncoming ? 'incoming' : 'outgoing');
   const [micOn, setMicOn] = useState(true);
@@ -84,8 +87,24 @@ function CallsPageInner() {
     const socket = getSocket();
     if (!socket) return;
 
+    let noAnswerTimer: ReturnType<typeof setTimeout> | null = null;
+    if (!isIncoming) {
+      noAnswerTimer = setTimeout(() => {
+        const s = getSocket();
+        s?.emit('call:end', { toUserId: peerId });
+        setCallState('ended');
+        setError('Нет ответа');
+        if (durationRef.current) {
+          clearInterval(durationRef.current);
+          durationRef.current = null;
+        }
+        setTimeout(() => router.replace('/dashboard'), 2000);
+      }, 45_000);
+    }
+
     const onAnswered = async (data: { fromUserId: string; answer: RTCSessionDescriptionInit }) => {
       if (data.fromUserId !== peerIdRef.current) return;
+      if (noAnswerTimer) clearTimeout(noAnswerTimer);
       await setRemoteAnswer(data.answer);
     };
 
@@ -95,6 +114,7 @@ function CallsPageInner() {
     };
 
     const onRejected = () => {
+      if (noAnswerTimer) clearTimeout(noAnswerTimer);
       setCallState('ended');
       setError('Звонок отклонён');
       if (durationRef.current) {
@@ -105,6 +125,7 @@ function CallsPageInner() {
     };
 
     const onEnded = () => {
+      if (noAnswerTimer) clearTimeout(noAnswerTimer);
       setCallState('ended');
       if (durationRef.current) {
         clearInterval(durationRef.current);
@@ -114,6 +135,7 @@ function CallsPageInner() {
     };
 
     const onBusy = () => {
+      if (noAnswerTimer) clearTimeout(noAnswerTimer);
       setCallState('ended');
       setError('Собеседник занят');
       if (durationRef.current) {
@@ -130,13 +152,14 @@ function CallsPageInner() {
     socket.on('call:busy', onBusy);
 
     return () => {
+      if (noAnswerTimer) clearTimeout(noAnswerTimer);
       socket.off('call:answered', onAnswered);
       socket.off('call:ice-candidate', onIce);
       socket.off('call:rejected', onRejected);
       socket.off('call:ended', onEnded);
       socket.off('call:busy', onBusy);
     };
-  }, [accessToken, router, setRemoteAnswer, addIceCandidate]);
+  }, [accessToken, router, setRemoteAnswer, addIceCandidate, isIncoming, peerId]);
 
   useEffect(() => {
     if (!peerId || !accessToken) return;
@@ -155,20 +178,21 @@ function CallsPageInner() {
   const handleAnswer = useCallback(async () => {
     if (!incomingOffer) return;
     try {
-      const offer = JSON.parse(decodeURIComponent(incomingOffer)) as RTCSessionDescriptionInit;
-      await answerCall(peerId, offer, isVideo);
+      await answerCall(peerId, incomingOffer, isVideo);
       attachLocalStream();
+      clearIncomingCall(null);
     } catch {
       setError('Ошибка при ответе на звонок');
     }
-  }, [peerId, isVideo, incomingOffer, answerCall, attachLocalStream]);
+  }, [peerId, isVideo, incomingOffer, answerCall, attachLocalStream, clearIncomingCall]);
 
   const handleReject = useCallback(() => {
     const socket = getSocket();
     socket?.emit('call:reject', { toUserId: peerId });
+    clearIncomingCall(null);
     endCall();
     router.replace('/dashboard');
-  }, [peerId, router, endCall]);
+  }, [peerId, router, endCall, clearIncomingCall]);
 
   const handleEnd = useCallback(() => {
     endCall(peerId);

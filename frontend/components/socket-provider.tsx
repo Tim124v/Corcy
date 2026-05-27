@@ -67,7 +67,11 @@ export function SocketProvider() {
   const initialized = useRef(false);
 
   useEffect(() => {
-    if (!accessToken || initialized.current) return;
+    if (!accessToken) {
+      initialized.current = false;
+      return;
+    }
+    if (initialized.current) return;
     initialized.current = true;
 
     if (typeof window !== 'undefined' && 'Notification' in window) {

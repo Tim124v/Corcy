@@ -19,233 +19,32 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { MessageStatus } from '../../components/chat/MessageStatus';
 import { usePresenceStore } from '../../store/presence';
+import type {
+  Connection,
+  Message,
+  ReplyPreview,
+  Reaction,
+  SearchResult,
+  ThreadResponse,
+  Grouped,
+  AttachmentDraft,
+  InviteItem,
+  Room,
+  RoomMessage,
+  RoomThreadResponse,
+} from './types';
+import {
+  initials,
+  getAvatarGradient,
+  decodeAttachmentName,
+  formatFileSize,
+  formatRelativeTime,
+  getLatestIncomingTimestamp,
+  isTimestampNewer,
+} from './utils';
+import { QuoteBubble, renderAvatar } from './components';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-type Connection = { id: string; user: { id: string; email: string; name: string | null; avatarUrl?: string | null } };
-type Message = {
-  id: string;
-  text: string;
-  senderId: string;
-  recipientId?: string;
-  createdAt: string;
-  attachmentUrl?: string | null;
-  attachmentName?: string | null;
-  attachmentType?: string | null;
-  readAt?: string | null;
-  editedAt?: string | null;
-  replyTo?: {
-    id: string;
-    text: string;
-    senderId: string;
-    attachmentName?: string | null;
-  } | null;
-};
-type ReplyPreview = {
-  id: string;
-  text: string;
-  senderId: string;
-  attachmentName?: string | null;
-  senderName?: string;
-};
-type Reaction = { emoji: string; count: number; userReacted: boolean };
-type SearchResult = {
-  messageId: string;
-  peerId: string;
-  peerName: string | null;
-  peerEmail: string;
-  text: string;
-  createdAt: string;
-};
-type ThreadResponse = { messages: Message[]; hasMore: boolean; nextCursor?: string };
-type Grouped = { title: string; items: (Message | RoomMessage)[] };
-type AttachmentDraft = { type: 'media' | 'file'; name: string; file: File; preview?: string; size: number };
-type InviteItem = {
-  id: string;
-  token: string;
-  toEmail: string | null;
-  createdAt: string;
-  expiresAt: string;
-  usedAt: string | null;
-  usedById: string | null;
-  status: 'active' | 'expired' | 'used';
-  link: string;
-};
-type Room = {
-  id: string;
-  name: string;
-  owner: { id: string; email: string; name: string | null; avatarUrl?: string | null };
-  joinedAt: string;
-  isOwner: boolean;
-  expiresAt?: string;
-};
-type RoomMessage = {
-  id: string;
-  text: string;
-  senderId: string;
-  createdAt: string;
-  systemEventType?: string;
-  attachmentUrl?: string | null;
-  attachmentName?: string | null;
-  attachmentType?: string | null;
-  editedAt?: string | null;
-  replyTo?: {
-    id: string;
-    text: string;
-    senderId: string;
-    attachmentName?: string | null;
-  } | null;
-  sender: { id: string; email: string; name: string | null; avatarUrl?: string | null };
-};
-type RoomThreadResponse = { messages: RoomMessage[]; hasMore: boolean; nextCursor?: string };
-
-const initials = (name?: string | null, email?: string) => {
-  if (name && name.trim()) {
-    return name
-      .trim()
-      .split(/\s+/)
-      .map((part) => part[0]?.toUpperCase())
-      .slice(0, 2)
-      .join('');
-  }
-  if (email) return email[0]?.toUpperCase() || '?';
-  return '?';
-};
-
-const avatarColors = [
-  'from-violet-500 to-purple-600',
-  'from-blue-500 to-indigo-600',
-  'from-emerald-500 to-teal-600',
-  'from-amber-500 to-orange-500',
-  'from-rose-500 to-pink-500',
-  'from-cyan-500 to-blue-500',
-] as const;
-
-const getAvatarGradient = (userId: string) => {
-  let n = 0;
-  for (let i = 0; i < userId.length; i++) n += userId.charCodeAt(i);
-  return avatarColors[Math.abs(n) % avatarColors.length];
-};
-
-const decodeAttachmentName = (value?: string | null) => {
-  if (!value) return '';
-  if (!/[ÐÑ]/.test(value)) return value;
-
-  try {
-    const bytes = Uint8Array.from([...value].map((char) => char.charCodeAt(0)));
-    const decoded = new TextDecoder('utf-8').decode(bytes);
-    const originalNoise = (value.match(/[ÐÑ]/g) || []).length;
-    const decodedNoise = (decoded.match(/[ÐÑ]/g) || []).length;
-    return decodedNoise < originalNoise ? decoded : value;
-  } catch {
-    return value;
-  }
-};
-
-const formatFileSize = (bytes?: number | null) => {
-  if (!bytes || Number.isNaN(bytes)) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes >= 10 * 1024 ? 0 : 1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-};
-
-const formatRelativeTime = (dateString: string | undefined, now: number, isEn: boolean) => {
-  if (!dateString) return isEn ? 'recently' : 'недавно';
-  const diff = Math.max(0, now - new Date(dateString).getTime());
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 60) return isEn ? `${Math.max(1, minutes)} min ago` : `${Math.max(1, minutes)} мин назад`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return isEn ? `${hours} hour${hours > 1 ? 's' : ''} ago` : `${hours} ч назад`;
-  const days = Math.floor(hours / 24);
-  return isEn ? (days === 1 ? 'Yesterday' : `${days} days ago`) : days === 1 ? 'Вчера' : `${days} д назад`;
-};
-
-const getLatestIncomingTimestamp = <T extends { senderId: string; createdAt: string }>(
-  items: T[],
-  currentUserId?: string,
-) => {
-  if (!currentUserId) return null;
-  const latestIncoming = [...items].reverse().find((item) => item.senderId !== currentUserId);
-  return latestIncoming?.createdAt || null;
-};
-
-const isTimestampNewer = (nextTimestamp: string | null, prevTimestamp?: string) => {
-  if (!nextTimestamp) return false;
-  if (!prevTimestamp) return true;
-  return new Date(nextTimestamp).getTime() > new Date(prevTimestamp).getTime();
-};
-
-function QuoteBubble({
-  replyTo,
-  isMine,
-  allMessages,
-  isEn,
-}: {
-  replyTo: { id: string; text: string; senderId: string; attachmentName?: string | null };
-  isMine: boolean;
-  allMessages: { id: string; senderId: string }[];
-  isEn: boolean;
-}) {
-  const isReplyMine = allMessages.some(
-    (m) => m.id === replyTo.id && m.senderId === replyTo.senderId,
-  );
-  return (
-    <div
-      className={`mb-1.5 rounded-xl px-2.5 py-1.5 text-[11px] border-l-2 ${
-        isMine
-          ? 'border-white/50 bg-white/15 text-white/80'
-          : 'border-indigo-400/60 bg-slate-200/60 text-slate-600 dark:bg-slate-600/30 dark:text-slate-300'
-      }`}
-    >
-      <div className="mb-0.5 font-semibold opacity-80">
-        {isReplyMine ? (isEn ? 'You' : 'Вы') : isEn ? 'Message' : 'Сообщение'}
-      </div>
-      <div className="truncate leading-tight">
-        {replyTo.text || (replyTo.attachmentName ? `📎 ${replyTo.attachmentName}` : '…')}
-      </div>
-    </div>
-  );
-}
-
-const renderAvatar = ({
-  name,
-  email,
-  photo,
-  userId,
-  className = '',
-}: {
-  name?: string | null;
-  email?: string;
-  photo?: string | null;
-  userId?: string;
-  className?: string;
-  textClassName?: string;
-}) => {
-  const gradient = userId ? getAvatarGradient(userId) : 'from-slate-500 to-slate-600';
-  const fallbackEl = (
-    <div className={`absolute inset-0 flex items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold text-white ${gradient}`}>
-      {initials(name, email)}
-    </div>
-  );
-  const sizeClass = className.includes('h-') ? '' : 'h-10 w-10';
-  return (
-    <div className={`relative shrink-0 rounded-full overflow-hidden ${sizeClass} ${className}`}>
-      {fallbackEl}
-      {photo && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={photo}
-          alt=""
-          className="relative z-10 h-full w-full object-cover"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-          }}
-        />
-      )}
-    </div>
-  );
-};
 
 function DashboardInner() {
   const router = useRouter();

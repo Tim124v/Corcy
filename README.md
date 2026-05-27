@@ -1,147 +1,584 @@
-Приватные связи: контакты, приглашения по ссылке, чаты.
+<div align="center">
 
-**Стек:** Backend — NestJS, Prisma (Postgres), JWT. Frontend — Next.js 14, TailwindCSS, Zustand.
+# CONNEXY
 
-**Возможности:** регистрация с подтверждением email, логин, личный кабинет, приглашения по ссылке, чаты и комнаты.
+**Private messenger with invite-only access**
 
+[![TypeScript](https://img.shields.io/badge/TypeScript-98%25-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-10-e0234e?style=flat-square&logo=nestjs)](https://nestjs.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![React Native](https://img.shields.io/badge/React_Native-Expo-0ea5e9?style=flat-square&logo=expo)](https://expo.dev/)
+[![Live](https://img.shields.io/badge/Live-connexy--com--frontend.vercel.app-6366f1?style=flat-square)](https://connexy-com-frontend.vercel.app)
 
-## Email verification (подтверждение email)
-
-Регистрация проходит в два шага:
-
-1. **Регистрация** — пользователь вводит email, пароль и подтверждение пароля. Бэкенд создаёт запись пользователя (`isVerified: false`), генерирует 6-значный код, сохраняет его в таблице `EmailVerification` (срок действия 10 минут) и отправляет письмо на email через SMTP.
-2. **Подтверждение** — пользователь переходит на страницу `/auth/verify-email`, вводит код из письма. При успешной проверке пользователь помечается как `isVerified: true`, создаётся сессия (JWT), выполняется редирект в дашборд.
-
-Если код не пришёл, на странице подтверждения есть кнопка **«Отправить ещё раз»** — она запрашивает новый код (старый код становится недействительным).
-
-**Безопасность:**
-
-- Пароль хранится в виде bcrypt-хеша.
-- Код подтверждения действителен 10 минут.
-- Ограничение: не более 5 попыток ввода кода за 10 минут (по email).
-- Вход возможен только для пользователей с подтверждённым email.
+</div>
 
 ---
 
-## Переменные окружения
+## About
 
-### Backend (`backend/.env` или корневой `.env`)
+Connexy is a full-featured messenger with invites, group rooms, video calls, and end-to-end encryption. The project went through a full cycle: security audit → vulnerability fixes → feature development → production deployment.
 
-| Переменная      | Описание |
-|-----------------|----------|
-| `DATABASE_URL`  | Строка подключения PostgreSQL. |
-| `JWT_SECRET`    | Секрет для подписи JWT. |
-| `JWT_EXPIRES_IN`| Срок жизни токена (например `7d`). |
-| `FRONTEND_URL`  | URL фронтенда (для ссылок в письмах). |
-| `SMTP_HOST`     | Хост SMTP для отправки писем (подтверждение email, приглашения). |
-| `SMTP_PORT`     | Порт SMTP (например 587). |
-| `SMTP_USER`     | Логин SMTP. |
-| `SMTP_PASS`     | Пароль SMTP. |
-| `SMTP_FROM`     | Адрес отправителя в письмах. |
+**Three platforms from a single monorepo:** web (Next.js), backend (NestJS), and a mobile app (Expo).
 
-Если SMTP не задан, регистрация и приглашения по-прежнему работают, но письма с кодом не отправляются (код можно смотреть в логах бэкенда при разработке).
+---
 
-### Frontend (`frontend/.env.local`)
+## Tech stack
 
-| Переменная             | Описание |
-|------------------------|----------|
-| `NEXT_PUBLIC_API_URL`  | URL бэкенда (например `http://localhost:3001`). |
+### Backend
+| | |
+|---|---|
+| **Runtime** | Node.js + NestJS 10 |
+| **Database** | PostgreSQL + Prisma ORM |
+| **Auth** | JWT (access + refresh rotation), 2FA (TOTP), backup codes |
+| **Real-time** | Socket.io (WebSocket) |
+| **Email** | Nodemailer (SMTP) |
+| **Files** | Cloudinary |
+| **Payments** | Stripe (FREE / PRO / TEAM plans) |
+| **SFU calls** | LiveKit (fallback: WebRTC Mesh P2P) |
+| **Deploy** | Render |
+
+### Frontend
+| | |
+|---|---|
+| **Framework** | Next.js 14 (App Router) |
+| **UI** | TailwindCSS |
+| **State** | Zustand |
+| **Real-time** | Socket.io-client |
+| **Calls** | WebRTC (P2P Mesh + LiveKit SFU) |
+| **Deploy** | Vercel |
+
+### Mobile
+| | |
+|---|---|
+| **Framework** | React Native + Expo SDK 56 |
+| **Navigation** | Expo Router |
+| **Storage** | expo-secure-store (Keychain / Keystore) |
+| **Crypto** | tweetnacl + expo-crypto |
+
+---
+
+## Security architecture
+
+The project went through a **security audit** — 6 critical issues were found and fixed:
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | DM could be sent to any user without contact check | Validate Connection before sending |
+| 2 | WebSocket room subscription without membership check | Validate RoomMember in handleJoinRoom |
+| 3 | Unlimited email code resends | Rate limiting (DB + express-rate-limit) |
+| 4 | attachmentUrl without domain validation | Cloudinary allowlist |
+| 5 | Invite tokens stored in plaintext | Store only SHA-256 hash |
+| 6 | Email verification codes stored in plaintext | SHA-256 hashing of codes |
+
+### E2E encryption
+
+- **Algorithm:** X25519 Diffie-Hellman + XSalsa20-Poly1305 (NaCl Box, tweetnacl)
+- **Keys:** generated on-device; the private key never leaves the client
+- **Storage:** private key is encrypted with a master key (PBKDF2 on web, SHA-256 on mobile) and stored in localStorage / Keychain
+- **Format:** `e2e:{nonce_hex}:{ciphertext_base64}` — the server stores ciphertext and cannot decrypt it
+- **Indicator:** `🔐 E2E` badge in the chat header when both parties have keys
+
+---
+
+## Features
+
+### Messaging
+- ✅ Direct messages (DM) — contacts only
+- ✅ Password-protected group rooms (TTL 10 days)
+- ✅ Message editing (24h window)
+- ✅ Message deletion
+- ✅ Reply / Quote
+- ✅ Emoji reactions (toggle, max 20 per message)
+- ✅ Attachments (Cloudinary)
+- ✅ Message search
+- ✅ Typing indicator
+- ✅ Read receipts
+
+### Calls
+- ✅ 1:1 video and voice calls (WebRTC)
+- ✅ Group calls (WebRTC Mesh up to 6 participants)
+- ✅ Group calls via SFU (LiveKit, scales to 200+)
+- ✅ Screen sharing
+- ✅ Incoming call UI with ringtone (Web Audio API)
+- ✅ 45s no-answer timeout
+
+### Authentication
+- ✅ Invite-only registration
+- ✅ Email verification (6-digit code, SHA-256 hash in DB)
+- ✅ 2FA — TOTP (Google Authenticator, Authy)
+- ✅ Backup codes (80-bit entropy, format XXXXX-XXXXX-XXXXX-XXXXX)
+- ✅ Refresh token rotation + family invalidation
+- ✅ Up to 10 active devices per account
+- ✅ Waitlist with admin management
+
+### Notifications
+- ✅ Web Push notifications (VAPID)
+- ✅ In-app toast for incoming calls
+- ✅ Push on group-call start (offline members)
+
+### Admin
+- ✅ Platform statistics
+- ✅ Users list with search and pagination
+- ✅ Change user plan
+- ✅ Audit log with severity filtering
+
+### Plans and limits
+| Feature | FREE | PRO | TEAM |
+|---|---|---|---|
+| Contacts | 10 | 100 | Unlimited |
+| Active rooms | 1 | 5 | 20 |
+| Room members | 10 | 50 | 200 |
+| Monthly invites | 3 | 25 | 100 |
+
+---
+
+## Local development
+
+### Requirements
+- Node.js 18+
+- PostgreSQL
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/Tim124v/Connexy.com.git
+cd Connexy.com
+
+# Install dependencies
+npm install
+
+# Generate Prisma client
+cd backend && npx prisma generate && cd ..
+```
+
+### Environment
+
+Copy `.env.example` to `backend/.env` and fill it in:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Minimal set for local run:
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/connexy
+JWT_SECRET=your-secret-key-min-32-chars
+FRONTEND_URL=http://localhost:3000
+```
+
+### Migrations and run
+
+```bash
+# Apply migrations
+cd backend && npx prisma migrate deploy && cd ..
+
+# Start backend + frontend
+npm run dev
+```
+
+- Frontend: http://localhost:3000
+- Backend: http://localhost:3001
+
+### First user (bootstrap)
+
+To register the first admin user, set in `backend/.env`:
+```env
+BOOTSTRAP_INVITE_TOKEN=any-secret-token
+```
+Use this token as the invite during registration.
+
+---
+
+## Deployment
+
+### Backend — Render
+
+```yaml
+Build: npm install --include=dev && npx prisma generate && npm run build
+Start: npx prisma migrate deploy && node dist/main.js
+```
+
+Required environment variables on Render:
+```
+DATABASE_URL=...
+JWT_SECRET=...
+CORS_ORIGIN=https://your-frontend.vercel.app
+FRONTEND_URL=https://your-frontend.vercel.app
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your@gmail.com
+SMTP_PASS=xxxx xxxx xxxx xxxx
+```
+
+### Frontend — Vercel
+
+```
+NEXT_PUBLIC_API_URL=https://your-backend.onrender.com
+```
+
+### Mobile — Expo
+
+```bash
+cd mobile
+npm install
+npx expo start
+```
+
+For a physical device, set your server IP in `mobile/app.json`:
+```json
+"extra": { "apiUrl": "http://192.168.1.100:3001" }
+```
+
+---
+
+## WebRTC and TURN
+
+For reliable calls behind NAT you need a TURN server.
+
+**Quick option (free):**
+```env
+NEXT_PUBLIC_TURN_URLS=turn:openrelay.metered.ca:80
+NEXT_PUBLIC_TURN_USERNAME=openrelayproject
+NEXT_PUBLIC_TURN_CREDENTIAL=openrelayproject
+```
+
+**Production (paid):** [metered.ca](https://www.metered.ca/)
+
+---
+
+## LiveKit SFU (group calls >6 participants)
+
+```env
+LIVEKIT_API_KEY=APIxxxxxxxxxxxxxxx
+LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxx
+LIVEKIT_URL=wss://your-project.livekit.cloud
+```
+
+Without LiveKit the app falls back to WebRTC Mesh automatically (up to 6 participants).
+
+---
+
+## Project structure
+
+```
+Connexy.com/
+├── backend/          # NestJS API
+│   ├── src/
+│   │   ├── auth/     # JWT, 2FA, email verification
+│   │   ├── chat/     # WebSocket gateway, WebRTC signaling
+│   │   ├── messages/ # DM, E2E, reactions, search
+│   │   ├── rooms/    # Group rooms, LiveKit tokens
+│   │   ├── users/    # Profile, E2E public keys
+│   │   ├── security/ # Encryption, audit log, token refresh
+│   │   └── ...
+│   └── prisma/       # Schema + migrations
+├── frontend/         # Next.js 14 web app
+│   ├── app/          # App Router pages
+│   ├── hooks/        # useWebRTC, useGroupWebRTC, useLiveKit, useE2E
+│   ├── store/        # Zustand stores
+│   └── lib/          # API client, E2E crypto
+└── mobile/           # React Native (Expo)
+    ├── app/          # Expo Router pages
+    ├── hooks/        # use-e2e (mobile)
+    ├── lib/          # API client, e2e-crypto-mobile
+    └── store/        # Auth store (SecureStore)
+```
+
+---
+
+<div align="center">
+Made with ❤️ · <a href="https://connexy-com-frontend.vercel.app">Live Demo</a>
+</div>
+<div align="center">
+
+# CONNEXY
+
+**Приватный мессенджер с invite-only доступом**
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-98%25-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-10-e0234e?style=flat-square&logo=nestjs)](https://nestjs.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![React Native](https://img.shields.io/badge/React_Native-Expo-0ea5e9?style=flat-square&logo=expo)](https://expo.dev/)
+[![Live](https://img.shields.io/badge/Live-connexy--com--frontend.vercel.app-6366f1?style=flat-square)](https://connexy-com-frontend.vercel.app)
+
+</div>
+
+---
+
+## О проекте
+
+Connexy — полноценный мессенджер с приглашениями, групповыми комнатами, видеозвонками и end-to-end шифрованием. Проект прошёл полный цикл: security audit → исправление уязвимостей → разработка фич → деплой на продакшн.
+
+**Три платформы из одного монорепо:** веб (Next.js), backend (NestJS), мобильное приложение (Expo).
+
+---
+
+## Стек
+
+### Backend
+| | |
+|---|---|
+| **Runtime** | Node.js + NestJS 10 |
+| **База данных** | PostgreSQL + Prisma ORM |
+| **Аутентификация** | JWT (access + refresh rotation), 2FA (TOTP), backup-коды |
+| **Real-time** | Socket.io (WebSocket) |
+| **Email** | Nodemailer (SMTP) |
+| **Файлы** | Cloudinary |
+| **Платежи** | Stripe (FREE / PRO / TEAM планы) |
+| **Звонки SFU** | LiveKit (fallback: WebRTC Mesh P2P) |
+| **Деплой** | Render |
+
+### Frontend
+| | |
+|---|---|
+| **Framework** | Next.js 14 (App Router) |
+| **UI** | TailwindCSS |
+| **State** | Zustand |
+| **Real-time** | Socket.io-client |
+| **Звонки** | WebRTC (P2P Mesh + LiveKit SFU) |
+| **Деплой** | Vercel |
+
+### Mobile
+| | |
+|---|---|
+| **Framework** | React Native + Expo SDK 56 |
+| **Навигация** | Expo Router |
+| **Хранилище** | expo-secure-store (Keychain / Keystore) |
+| **Крипто** | tweetnacl + expo-crypto |
+
+---
+
+## Архитектура безопасности
+
+Проект прошёл **security audit** — было найдено и закрыто 6 критических уязвимостей:
+
+| # | Уязвимость | Исправление |
+|---|---|---|
+| 1 | Отправка DM любому пользователю без проверки контактов | Проверка Connection перед отправкой |
+| 2 | Подписка на WS-комнату без проверки членства | Проверка RoomMember в handleJoinRoom |
+| 3 | Неограниченный resend email кода | Rate limit (БД + express-rate-limit) |
+| 4 | attachmentUrl без валидации домена | Whitelist Cloudinary |
+| 5 | Токены инвайтов в plaintext в БД | Хранение только SHA-256 хеша |
+| 6 | Email verification коды в plaintext | SHA-256 хеширование кодов |
+
+### E2E шифрование
+
+- **Алгоритм:** X25519 Diffie-Hellman + XSalsa20-Poly1305 (NaCl Box, библиотека tweetnacl)
+- **Ключи:** генерируются на устройстве, приватный ключ никогда не покидает клиента
+- **Хранение:** приватный ключ зашифрован master-key (PBKDF2 на web, SHA-256 на mobile), хранится в localStorage / Keychain
+- **Формат:** `e2e:{nonce_hex}:{ciphertext_base64}` — сервер хранит ciphertext и не может расшифровать
+- **Индикатор:** `🔐 E2E` в шапке чата когда оба участника настроили ключи
+
+---
+
+## Функциональность
+
+### Сообщения
+- ✅ Личные чаты (DM) — только между контактами
+- ✅ Групповые комнаты с паролем (TTL 10 дней)
+- ✅ Редактирование сообщений (окно 24 часа)
+- ✅ Удаление сообщений
+- ✅ Reply / Quote — ответ на сообщение
+- ✅ Реакции emoji (toggle, лимит 20 на сообщение)
+- ✅ Вложения (Cloudinary)
+- ✅ Поиск по переписке
+- ✅ Индикатор печати
+- ✅ Статус прочтения
+
+### Звонки
+- ✅ Видео и голосовые 1:1 звонки (WebRTC)
+- ✅ Групповые звонки (WebRTC Mesh до 6 участников)
+- ✅ Групповые звонки через SFU (LiveKit, масштабируется до 200+)
+- ✅ Screen sharing
+- ✅ Красивый UI входящего звонка с рингтоном (Web Audio API)
+- ✅ Таймаут 45 сек без ответа
+
+### Аутентификация
+- ✅ Регистрация только по инвайт-ссылке (invite-only)
+- ✅ Email верификация (6-значный код, SHA-256 хеш в БД)
+- ✅ 2FA — TOTP (Google Authenticator, Authy)
+- ✅ Backup-коды (80 бит энтропии, формат XXXXX-XXXXX-XXXXX-XXXXX)
+- ✅ Refresh token rotation + family invalidation
+- ✅ До 10 активных устройств на аккаунт
+- ✅ Вейтлист с admin-управлением
+
+### Уведомления
+- ✅ Web Push уведомления (VAPID)
+- ✅ In-app toast при входящем звонке
+- ✅ Push при начале группового звонка (для оффлайн-участников)
+
+### Admin панель
+- ✅ Статистика платформы
+- ✅ Список пользователей с поиском и пагинацией
+- ✅ Смена плана пользователя
+- ✅ Журнал аудита с фильтрацией по severity
+
+### Планы и ограничения
+| Функция | FREE | PRO | TEAM |
+|---|---|---|---|
+| Контакты | 10 | 100 | Безлимит |
+| Активные комнаты | 1 | 5 | 20 |
+| Участников в комнате | 10 | 50 | 200 |
+| Инвайтов в месяц | 3 | 25 | 100 |
 
 ---
 
 ## Запуск локально
 
-1. Установить зависимости и сгенерировать Prisma-клиент:
+### Требования
+- Node.js 18+
+- PostgreSQL
 
-   ```bash
-   npm install
-   cd backend && npx prisma generate && cd ..
-   ```
+### Установка
 
-2. Настроить `backend/.env`: указать `DATABASE_URL` (PostgreSQL на `localhost` или облако; для Render часто нужен суффикс `?sslmode=require`). Убедитесь, что сервер БД запущен и доступен по этому URL. Затем применить миграции (на пустой БД создаётся полная схема одной baseline-миграцией):
+```bash
+# Клонировать репозиторий
+git clone https://github.com/Tim124v/Connexy.com.git
+cd Connexy.com
 
-   ```bash
-   cd backend && npx prisma migrate deploy && cd ..
-   ```
+# Установить зависимости
+npm install
 
-3. Запустить backend и frontend:
+# Сгенерировать Prisma клиент
+cd backend && npx prisma generate && cd ..
+```
 
-   ```bash
-   npm run dev
-   ```
+### Настройка окружения
 
-   - Frontend: http://localhost:3000  
-   - Backend: http://localhost:3001  
+Скопируй `.env.example` в `backend/.env` и заполни:
 
-4. Регистрация: http://localhost:3000/auth/register → после ввода данных редирект на `/auth/verify-email?email=...`. Код из письма (или из логов бэкенда, если SMTP не настроен) ввести на странице подтверждения.
+```bash
+cp backend/.env.example backend/.env
+```
+
+Минимальный набор для локального запуска:
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/connexy
+JWT_SECRET=your-secret-key-min-32-chars
+FRONTEND_URL=http://localhost:3000
+```
+
+### Миграции и запуск
+
+```bash
+# Применить миграции
+cd backend && npx prisma migrate deploy && cd ..
+
+# Запустить backend + frontend
+npm run dev
+```
+
+- Frontend: http://localhost:3000
+- Backend: http://localhost:3001
+
+### Первый пользователь (bootstrap)
+
+Для регистрации первого admin-пользователя задай в `backend/.env`:
+```env
+BOOTSTRAP_INVITE_TOKEN=любой-секретный-токен
+```
+Используй этот токен как инвайт при регистрации.
 
 ---
 
-## WebRTC звонки и TURN-сервер
+## Деплой
 
-Видео и голосовые звонки используют WebRTC P2P. Для установки соединения нужен STUN-сервер (Google STUN используется по умолчанию, бесплатно).
+### Backend — Render
 
-**Проблема:** STUN не работает за Symmetric NAT — корпоративные сети, часть мобильных операторов. Для надёжных звонков нужен TURN-сервер.
+```yaml
+Build: npm install --include=dev && npx prisma generate && npm run build
+Start: npx prisma migrate deploy && node dist/main.js
+```
 
-### Варианты настройки TURN
+Обязательные переменные окружения на Render:
+```
+DATABASE_URL=...
+JWT_SECRET=...
+CORS_ORIGIN=https://your-frontend.vercel.app
+FRONTEND_URL=https://your-frontend.vercel.app
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your@gmail.com
+SMTP_PASS=xxxx xxxx xxxx xxxx
+```
 
-**Вариант A — Бесплатный Open Relay (Metered.ca, до 500MB/мес):**
+### Frontend — Vercel
 
+```
+NEXT_PUBLIC_API_URL=https://your-backend.onrender.com
+```
+
+### Mobile — Expo
+
+```bash
+cd mobile
+npm install
+npx expo start
+```
+
+Для реального устройства задай IP сервера в `mobile/app.json`:
+```json
+"extra": { "apiUrl": "http://192.168.1.100:3001" }
+```
+
+---
+
+## WebRTC и TURN
+
+Для надёжных звонков за NAT нужен TURN-сервер.
+
+**Быстрый вариант (бесплатно):**
 ```env
-NEXT_PUBLIC_TURN_URLS=turn:openrelay.metered.ca:80,turn:openrelay.metered.ca:443?transport=tcp,turns:openrelay.metered.ca:443?transport=tcp
+NEXT_PUBLIC_TURN_URLS=turn:openrelay.metered.ca:80
 NEXT_PUBLIC_TURN_USERNAME=openrelayproject
 NEXT_PUBLIC_TURN_CREDENTIAL=openrelayproject
 ```
 
-**Вариант B — Платный Metered.ca (рекомендуется для production):**
-
-Зарегистрируйтесь на https://www.metered.ca/, создайте приложение, получите credentials.
-
-**Вариант C — Свой coturn:**
-
-Установите [coturn](https://github.com/coturn/coturn), задайте те же три переменные в `frontend/.env.local`.
-
-**Вариант D — Полный JSON список ICE (несколько TURN серверов):**
-
-```env
-NEXT_PUBLIC_WEBRTC_ICE_SERVERS_JSON=[{"urls":["turn:your.host:3478"],"username":"u","credential":"p"}]
-```
-
-### Без TURN
-
-Без TURN звонки работают только между пользователями в одной сети или если хотя бы один из них имеет публичный IP. Приложение запустится, но часть звонков может не соединиться. В dev-консоли будет предупреждение.
+**Production (платно):** [metered.ca](https://www.metered.ca/)
 
 ---
 
-## SFU для групповых звонков >6 участников (LiveKit)
+## LiveKit SFU (групповые звонки >6 человек)
 
-По умолчанию групповые звонки используют WebRTC Mesh (P2P) — хорошо до 6 участников.
-Для комнат с большим количеством участников нужен SFU (Selective Forwarding Unit).
-
-### Настройка LiveKit Cloud (рекомендуется)
-
-1. Зарегистрируйтесь на [livekit.io](https://livekit.io) → Create Project
-2. Скопируйте API Key, API Secret, WebSocket URL из Dashboard
-3. Добавьте в `backend/.env`:
-   ```
-   LIVEKIT_API_KEY=APIxxxxxxxxxxxxxxx
-   LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   LIVEKIT_URL=wss://your-project.livekit.cloud
-   ```
-
-### Поведение
-
-| Ситуация | Режим |
-|----------|-------|
-| LiveKit настроен | SFU (все групповые звонки через LiveKit) |
-| LiveKit не настроен | Mesh P2P (предупреждение при >6 уч.) |
-
-### Самостоятельный деплой LiveKit
-
-Если нужен self-hosted:
-```bash
-docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
-  -e LIVEKIT_KEYS="devkey: secret" \
-  livekit/livekit-server --dev
+```env
+LIVEKIT_API_KEY=APIxxxxxxxxxxxxxxx
+LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxx
+LIVEKIT_URL=wss://your-project.livekit.cloud
 ```
-Затем: `LIVEKIT_API_KEY=devkey`, `LIVEKIT_API_SECRET=secret`, `LIVEKIT_URL=ws://localhost:7880`
+
+Без LiveKit — автоматический fallback на WebRTC Mesh (до 6 участников).
+
+---
+
+## Структура проекта
+
+```
+Connexy.com/
+├── backend/          # NestJS API
+│   ├── src/
+│   │   ├── auth/     # JWT, 2FA, email verification
+│   │   ├── chat/     # WebSocket gateway, WebRTC signaling
+│   │   ├── messages/ # DM, E2E, reactions, search
+│   │   ├── rooms/    # Group rooms, LiveKit tokens
+│   │   ├── users/    # Profile, E2E public keys
+│   │   ├── security/ # Encryption, audit log, token refresh
+│   │   └── ...
+│   └── prisma/       # Schema + migrations
+├── frontend/         # Next.js 14 web app
+│   ├── app/          # App Router pages
+│   ├── hooks/        # useWebRTC, useGroupWebRTC, useLiveKit, useE2E
+│   ├── store/        # Zustand stores
+│   └── lib/          # API client, E2E crypto
+└── mobile/           # React Native (Expo)
+    ├── app/          # Expo Router pages
+    ├── hooks/        # use-e2e (mobile)
+    ├── lib/          # API client, e2e-crypto-mobile
+    └── store/        # Auth store (SecureStore)
+```
+
+---
+
+<div align="center">
+Made with ❤️ · <a href="https://connexy-com-frontend.vercel.app">Live Demo</a>
+</div>
