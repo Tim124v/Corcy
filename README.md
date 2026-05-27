@@ -8,7 +8,7 @@
 [![NestJS](https://img.shields.io/badge/NestJS-10-e0234e?style=flat-square&logo=nestjs)](https://nestjs.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React Native](https://img.shields.io/badge/React_Native-Expo-0ea5e9?style=flat-square&logo=expo)](https://expo.dev/)
-[![Live](https://img.shields.io/badge/Live-connexy--com--frontend.vercel.app-6366f1?style=flat-square)](https://connexy-com-frontend.vercel.app)
+[![Live](https://img.shields.io/badge/Live-corsy-6366f1?style=flat-square)](https://corsy-iyv33nrwc-tims-projects-87e9c46e.vercel.app/)
 
 </div>
 
@@ -142,8 +142,8 @@ The project went through a **security audit** — 6 critical issues were found a
 
 ```bash
 # Clone the repository
-git clone https://github.com/Tim124v/Connexy.com.git
-cd Connexy.com
+git clone https://github.com/Tim124v/Corcy.git corcy
+cd corcy
 
 # Install dependencies
 npm install
@@ -288,7 +288,7 @@ Corsy.com/
 ---
 
 <div align="center">
-Made with ❤️ · <a href="https://connexy-com-frontend.vercel.app">Live Demo</a>
+Made with ❤️ · <a href="https://corsy-iyv33nrwc-tims-projects-87e9c46e.vercel.app/">Live Demo</a>
 </div>
 <div align="center">
 
@@ -300,7 +300,7 @@ Made with ❤️ · <a href="https://connexy-com-frontend.vercel.app">Live Demo<
 [![NestJS](https://img.shields.io/badge/NestJS-10-e0234e?style=flat-square&logo=nestjs)](https://nestjs.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React Native](https://img.shields.io/badge/React_Native-Expo-0ea5e9?style=flat-square&logo=expo)](https://expo.dev/)
-[![Live](https://img.shields.io/badge/Live-connexy--com--frontend.vercel.app-6366f1?style=flat-square)](https://connexy-com-frontend.vercel.app)
+[![Live](https://img.shields.io/badge/Live-corsy-6366f1?style=flat-square)](https://corsy-iyv33nrwc-tims-projects-87e9c46e.vercel.app/)
 
 </div>
 
@@ -434,8 +434,8 @@ Corsy — полноценный мессенджер с приглашения�
 
 ```bash
 # Клонировать репозиторий
-git clone https://github.com/Tim124v/Connexy.com.git
-cd Connexy.com
+git clone https://github.com/Tim124v/Corcy.git corcy
+cd corcy
 
 # Установить зависимости
 npm install
@@ -580,5 +580,5 @@ Corsy.com/
 ---
 
 <div align="center">
-Made with ❤️ · <a href="https://connexy-com-frontend.vercel.app">Live Demo</a>
+Made with ❤️ · <a href="https://corsy-iyv33nrwc-tims-projects-87e9c46e.vercel.app/">Live Demo</a>
 </div>
